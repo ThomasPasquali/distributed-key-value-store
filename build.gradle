@@ -1,0 +1,52 @@
+plugins {
+    id 'application'
+    id 'org.openjfx.javafxplugin' version '0.0.9'
+}
+
+javafx {
+    version = "16"
+    modules = [ 'javafx.controls', 'javafx.fxml' ]
+}
+
+apply plugin: 'java'
+apply plugin: 'application'
+
+repositories {
+    mavenLocal()
+    mavenCentral()
+}
+
+def versions = [
+    ScalaBinary: "2.13"
+]
+
+compileJava.options.fork = true
+compileJava.options.forkOptions.executable = '/usr/lib/jvm/java-11-openjdk-amd64/bin/javac'
+
+dependencies {
+    implementation platform("com.typesafe.akka:akka-bom_${versions.ScalaBinary}:2.6.13")
+
+    implementation "com.typesafe.akka:akka-actor_${versions.ScalaBinary}"
+    testImplementation "com.typesafe.akka:akka-testkit_${versions.ScalaBinary}"
+}
+
+compileJava {
+    options.compilerArgs += ["-Xlint:deprecation"]
+}
+
+mainClassName = "main.Main"
+
+sourceSets {
+    main {
+        java {
+            srcDirs= ["src/main/java"]
+        }
+        resources {
+            srcDirs= ["src/main/resources"]
+        }
+    }
+}
+
+run {
+    standardInput = System.in
+}
