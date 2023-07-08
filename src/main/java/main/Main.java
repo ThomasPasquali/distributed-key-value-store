@@ -8,14 +8,17 @@ import javafx.beans.property.SimpleStringProperty;
 import javafx.event.ActionEvent;
 import javafx.fxml.FXML;
 import javafx.fxml.FXMLLoader;
-import javafx.scene.Parent;
+import javafx.geometry.Pos;
 import javafx.scene.Scene;
+import javafx.scene.control.Alert;
+import javafx.scene.control.Alert.AlertType;
 import javafx.scene.control.Button;
+import javafx.scene.control.ButtonType;
 import javafx.scene.control.Label;
-import javafx.scene.control.ScrollPane;
 import javafx.scene.control.SplitPane;
 import javafx.scene.control.TextArea;
 import javafx.scene.control.TextField;
+import javafx.scene.layout.GridPane;
 import javafx.scene.layout.HBox;
 import javafx.scene.layout.VBox;
 import javafx.stage.Stage;
@@ -26,45 +29,73 @@ public class Main extends Application {
   static int clientCount = 0;
   private KeyValStoreSystem system;
 
+  private void showErrorDialog (String error) {
+    (new Alert(AlertType.ERROR, error, ButtonType.OK)).showAndWait();
+  }
+
   @FXML
   private TextField newNodeIdField;
 
   @FXML
-  private VBox nodesVBox;
+  private VBox nodesPane;
 
   @FXML
   void newNode(ActionEvent event) {
-    int nodeId = Integer.parseInt(newNodeIdField.getText());
+    try {
+      newNode(Integer.parseInt(newNodeIdField.getText()));
+    } catch (Exception e) {
+      showErrorDialog(e.getMessage());
+    }
+  }
 
+  void newNode (int nodeId) throws Exception {
     SimpleStringProperty nodeLogsString = new SimpleStringProperty();
-    TextArea ta = new TextArea();
-    ta.setEditable(false);
-    ta.textProperty().bind(nodeLogsString);
+    SimpleStringProperty nodeStoreString = new SimpleStringProperty();
+    system.createNode(nodeId, nodeLogsString, nodeStoreString);
 
-    HBox hBox = new HBox(50, new Label("Node: " + nodeId));
-    VBox vbox = new VBox(5, hBox, ta);
+    TextArea logsTa = new TextArea();
+    logsTa.setEditable(false);
+    logsTa.textProperty().bind(nodeLogsString);
+    logsTa.textProperty().addListener((v, o, n) -> { // FIXME scroll to bottom
+      logsTa.setScrollTop(Double.MAX_VALUE);
+      logsTa.appendText("");
+    });
+
+    TextArea storeTa = new TextArea();
+    storeTa.setEditable(false);
+    storeTa.textProperty().bind(nodeStoreString); // FIXME scroll to bottom
+
+    HBox headHbox = new HBox(50, new Label("Node: " + nodeId));
+    headHbox.setAlignment(Pos.CENTER);
+    HBox bodyHbox = new HBox(10, logsTa, storeTa);
+    bodyHbox.setAlignment(Pos.CENTER);
+    VBox vbox = new VBox(5, headHbox, bodyHbox);
+    vbox.setAlignment(Pos.CENTER);
     Button b = new Button("Node " + nodeId + " leaves");
     b.setOnAction((ActionEvent e) -> {
       system.nodeLeaves(nodeId);
-      nodesVBox.getChildren().remove(vbox);
+      nodesPane.getChildren().remove(vbox);
     });
-    hBox.getChildren().add(b);
-    nodesVBox.getChildren().add(vbox);
-
-    system.createNode(nodeId, nodeLogsString);
+    headHbox.getChildren().add(b);
+    nodesPane.getChildren().add(vbox);
+    newNodeIdField.clear();
   }
-
 
   @FXML
   void newClient(ActionEvent event) {
     try {
       FXMLLoader fxmlLoader = new FXMLLoader(ClassLoader.getSystemClassLoader().getResource("client.fxml"));
-      fxmlLoader.setController(new ClientController());
+      int clientId = ++clientCount;
+      ClientController clientController = new ClientController(system, clientId);
+      fxmlLoader.setController(clientController);
       Stage stage = new Stage();
-      stage.setTitle("Client " + (++clientCount));
+      stage.setTitle("Client " + clientId);
       stage.setResizable(false);
       stage.setScene(new Scene((SplitPane) fxmlLoader.load()));
       stage.show();
+
+      system.addClient(clientId, clientController);
+      stage.setOnCloseRequest((v) -> { system.removeClient(clientId);});
     } catch (IOException e) {
       e.printStackTrace();
     }
@@ -81,6 +112,10 @@ public class Main extends Application {
       stage.show();
 
       system = new KeyValStoreSystem();
+      for (int i = 0; i < 50; i += 10) {
+        newNode(i);
+      }
+      newClient(null);
     } catch (Exception e) {
       e.printStackTrace();
     }

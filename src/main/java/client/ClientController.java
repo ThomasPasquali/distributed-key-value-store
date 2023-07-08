@@ -1,19 +1,123 @@
 package client;
 
+import akka.actor.AbstractActor;
+import akka.actor.AbstractActor.Receive;
+import akka.actor.ActorRef;
 import javafx.application.Application;
+import javafx.application.Platform;
+import javafx.collections.FXCollections;
+import javafx.collections.ListChangeListener;
+import javafx.collections.ObservableArray;
+import javafx.collections.ObservableList;
+import javafx.collections.ListChangeListener.Change;
+import javafx.event.ActionEvent;
+import javafx.fxml.FXML;
 import javafx.scene.Scene;
+import javafx.scene.control.Alert;
+import javafx.scene.control.Alert.AlertType;
+import javafx.scene.control.ButtonType;
+import javafx.scene.control.ChoiceBox;
 import javafx.scene.control.Label;
+import javafx.scene.control.TextField;
 import javafx.scene.layout.StackPane;
+import javafx.scene.text.Text;
+import javafx.scene.text.TextFlow;
 import javafx.stage.Stage;
+import system.KeyValStoreSystem;
+import system.Node.Get;
+import system.Node.Update;
 
-public class ClientController extends Application {
+public class ClientController {
 
-    @Override
-    public void start(Stage stage) {
-        Label l = new Label(getParameters().getNamed().keySet().toString());
-        Scene scene = new Scene(new StackPane(l), 640, 480);
-        stage.setScene(scene);
-        stage.show();
+  private void showErrorDialog (String error) {
+    (new Alert(AlertType.ERROR, error, ButtonType.OK)).showAndWait();
+  }
+
+  private KeyValStoreSystem system;
+  private ObservableList<String> feedbacks;
+  private ActorRef clientActor;
+
+  @FXML
+  private TextField getKeyField;
+
+  @FXML
+  private TextFlow textFlow;
+
+  @FXML
+  private TextField updateKeyField;
+
+  @FXML
+  private TextField updateValueField;
+
+  @FXML
+  private ChoiceBox<Integer> coordinatorChoiceBox;
+
+  @FXML
+  void getKey(ActionEvent event) {
+    String err = null;
+    Integer coordinatorId = coordinatorChoiceBox.getValue();
+    if (coordinatorId == null) {
+      err = "Please select a coordinator";
     }
+    Integer key = null;
+    try {
+      key = Integer.parseInt(getKeyField.getText());
+      if (key < 0) throw new Exception();
+    } catch (Exception e) {
+      err = "Invalid key: must be a non negative integer";
+    }
+    
+    if (err == null) {
+      feedbacks.add("Requesting key \"" + key + "\" to node " + coordinatorId);
+      system.get(clientActor, coordinatorId, key);
+    } else {
+      showErrorDialog(err);
+    }
+  }
+
+  @FXML
+  void updateKey(ActionEvent event) {
+    String err = null;
+    Integer coordinatorId = coordinatorChoiceBox.getValue();
+    if (coordinatorId == null) {
+      err = "Please select a coordinator";
+    }
+    Integer key = null;
+    try {
+      key = Integer.parseInt(updateKeyField.getText());
+      if (key < 0) throw new Exception();
+    } catch (Exception e) {
+      err = "Invalid key: must be a non negative integer";
+    }
+
+    if (err == null) {
+      feedbacks.add("Requesting key \"" + key + "\" to node " + coordinatorId);
+      system.update(clientActor, coordinatorId, key, updateValueField.getText());
+    } else {
+      showErrorDialog(err);
+    }
+  }
+
+  public ClientController (KeyValStoreSystem system, int id) {
+    this.system = system;
+    feedbacks = FXCollections.observableArrayList();
+    feedbacks.addListener((ListChangeListener.Change<? extends String> c) -> {
+      while (c.next()) {
+        Platform.runLater(() -> { // TODO fix java.util.ConcurrentModificationException
+          if (c.wasAdded()) {
+            c.getAddedSubList().stream().forEachOrdered(s -> textFlow.getChildren().add(new Text(s + "\n")));
+          }
+        });
+      }
+    });
+    clientActor = system.createClientActor(id, feedbacks);
+  }
+
+  public void addNode (int id) {
+    coordinatorChoiceBox.getItems().add(id);
+    if (coordinatorChoiceBox.getItems().size() == 1) {
+      coordinatorChoiceBox.setValue(id);
+    }
+  }
 
 }
