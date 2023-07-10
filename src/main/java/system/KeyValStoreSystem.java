@@ -5,7 +5,6 @@ import java.util.HashMap;
 import java.util.List;
 
 import akka.actor.AbstractActor;
-import akka.actor.AbstractActor.Receive;
 import akka.actor.ActorRef;
 import akka.actor.ActorSystem;
 import akka.actor.Props;
@@ -55,6 +54,9 @@ public class KeyValStoreSystem {
 
   public void removeClient (int id) {
     clientControllers.remove(id);
+    for (ClientController c : clientControllers.values()) {
+      c.removeNode(id);
+    }
   }
 
   public void createNode (int id, SimpleStringProperty logsProp, SimpleStringProperty storeProp) throws Exception {
@@ -103,6 +105,7 @@ public class KeyValStoreSystem {
       peer.tell(nodeLeaves, node);
     }
     nodes.remove(id);
+    removeClient(id);
   }
 
   public void get (ActorRef clientActor, int coordinatorId, int key) {

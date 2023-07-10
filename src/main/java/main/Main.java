@@ -18,7 +18,6 @@ import javafx.scene.control.Label;
 import javafx.scene.control.SplitPane;
 import javafx.scene.control.TextArea;
 import javafx.scene.control.TextField;
-import javafx.scene.layout.GridPane;
 import javafx.scene.layout.HBox;
 import javafx.scene.layout.VBox;
 import javafx.stage.Stage;
@@ -43,6 +42,8 @@ public class Main extends Application {
   void newNode(ActionEvent event) {
     try {
       newNode(Integer.parseInt(newNodeIdField.getText()));
+    } catch (NumberFormatException e) {
+      showErrorDialog("Please provide a non negative, unique ID");
     } catch (Exception e) {
       showErrorDialog(e.getMessage());
     }
@@ -92,6 +93,8 @@ public class Main extends Application {
       stage.setTitle("Client " + clientId);
       stage.setResizable(false);
       stage.setScene(new Scene((SplitPane) fxmlLoader.load()));
+      stage.setX(1100);
+      stage.setY(100);
       stage.show();
 
       system.addClient(clientId, clientController);
@@ -109,6 +112,8 @@ public class Main extends Application {
       stage.setTitle("Distributed key value store");
       stage.setResizable(false);
       stage.setScene(new Scene((VBox) fxmlLoader.load()));
+      stage.setX(50);
+      stage.setY(100);
       stage.show();
 
       system = new KeyValStoreSystem();

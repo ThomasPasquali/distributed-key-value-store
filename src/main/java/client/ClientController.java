@@ -1,31 +1,20 @@
 package client;
 
-import akka.actor.AbstractActor;
-import akka.actor.AbstractActor.Receive;
 import akka.actor.ActorRef;
-import javafx.application.Application;
 import javafx.application.Platform;
 import javafx.collections.FXCollections;
 import javafx.collections.ListChangeListener;
-import javafx.collections.ObservableArray;
 import javafx.collections.ObservableList;
-import javafx.collections.ListChangeListener.Change;
 import javafx.event.ActionEvent;
 import javafx.fxml.FXML;
-import javafx.scene.Scene;
 import javafx.scene.control.Alert;
 import javafx.scene.control.Alert.AlertType;
 import javafx.scene.control.ButtonType;
 import javafx.scene.control.ChoiceBox;
-import javafx.scene.control.Label;
 import javafx.scene.control.TextField;
-import javafx.scene.layout.StackPane;
 import javafx.scene.text.Text;
 import javafx.scene.text.TextFlow;
-import javafx.stage.Stage;
 import system.KeyValStoreSystem;
-import system.Node.Get;
-import system.Node.Update;
 
 public class ClientController {
 
@@ -68,7 +57,7 @@ public class ClientController {
     }
     
     if (err == null) {
-      feedbacks.add("Requesting key \"" + key + "\" to node " + coordinatorId);
+      feedbacks.add("Requesting get(" + key + ") to node " + coordinatorId);
       system.get(clientActor, coordinatorId, key);
     } else {
       showErrorDialog(err);
@@ -91,7 +80,7 @@ public class ClientController {
     }
 
     if (err == null) {
-      feedbacks.add("Requesting key \"" + key + "\" to node " + coordinatorId);
+      feedbacks.add("Requesting update(" + key + ", " + updateValueField.getText() + ") to node " + coordinatorId);
       system.update(clientActor, coordinatorId, key, updateValueField.getText());
     } else {
       showErrorDialog(err);
@@ -118,6 +107,11 @@ public class ClientController {
     if (coordinatorChoiceBox.getItems().size() == 1) {
       coordinatorChoiceBox.setValue(id);
     }
+  }
+
+  public void removeNode (int id) {
+    coordinatorChoiceBox.getItems().remove(coordinatorChoiceBox.getItems().indexOf(id));
+    coordinatorChoiceBox.setValue(coordinatorChoiceBox.getItems().isEmpty() ? null : coordinatorChoiceBox.getItems().get(0));
   }
 
 }

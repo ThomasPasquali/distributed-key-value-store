@@ -1,9 +1,9 @@
 package system;
 
 import java.io.Serializable;
-import java.util.ArrayList;
+import java.util.Formatter;
 import java.util.HashMap;
-import java.util.List;
+import java.util.StringJoiner;
 
 import akka.actor.AbstractActor;
 import akka.actor.ActorRef;
@@ -94,7 +94,20 @@ public class Node extends AbstractActor {
 
   protected int id;
   protected HashMap<Integer, ActorRef> nodes = new HashMap<>();
-  protected HashMap<Integer, StoreValue> store = new HashMap<>();
+  protected HashMap<Integer, StoreValue> store = new HashMap<>() { // FIXME List<StoreValue> keep history??
+    @Override
+    public String toString () {
+      StringJoiner sj = new StringJoiner("\n");
+      for (Integer k : store.keySet()) {
+        StoreValue v = store.get(k);
+        Formatter fmt = new Formatter();
+        sj.add(fmt.format("%-3d -> %-15s (v%d)", k, v.value, v.version).toString());
+        fmt.flush();
+        fmt.close();
+      }
+      return sj.toString();
+    }
+  }; 
 
   public Node(int id) {
     this.id = id;
@@ -106,8 +119,9 @@ public class Node extends AbstractActor {
   }
 
   void multicast(Serializable m) {
-    for (ActorRef p: nodes.values())
+    for (ActorRef p: nodes.values()) {
       p.tell(m, getSelf());
+    }
   }
 
   void onNodeJoins (NodeJoins nodeJoins) {
@@ -121,24 +135,38 @@ public class Node extends AbstractActor {
   }
 
   void onGet (Get getRequest) {
+    log("Get(" + getRequest.key + ") from " + getSender().path().name());
     // TODO
   }
 
   void onCoordinatorGet (CoordinatorGet getRequest) {
-    System.out.println("Coooord get");
-    sender().tell(new Feedback("Agagagagaga"), getSelf());
     log("Coordinating: get(" + getRequest.key + ")");
+    multicast(new Get(getRequest.key)); // TODO send only to responsible nodes
+
+    // TODO send only after quorum
+    StoreValue v = store.get(getRequest.key);
+    sender().tell(new Feedback(v == null ? "null" : v.value), getSelf());
   }
 
   void onUpdate (Update updateRequest) {
+    log("Update(" + updateRequest.key + ", " + updateRequest.value + ") from " + getSender().path().name());
     // TODO
   }
 
   void onCoordinatorUpdate (CoordinatorUpdate updateRequest) {
-    System.out.println("Coooord update");
-    sender().tell(new Feedback("Banananana"), getSelf());
-    KeyValStoreSystem.storesMap.get(this.id).setValue("BUBBUBUBUBBU");
     log("Coordinating: update(" + updateRequest.key + ", " + updateRequest.value + ")");
+    multicast(new Update(updateRequest.key, updateRequest.value)); // TODO send only to responsible nodes
+
+    // TODO send/update only after quorum
+    StoreValue oldItem = store.get(updateRequest.key);
+    if (oldItem != null) {
+      ++oldItem.version;
+      oldItem.value = updateRequest.value;
+    } else {
+      store.put(updateRequest.key, new StoreValue(updateRequest.value));
+    }
+    sender().tell(new Feedback("Banananana"), getSelf());
+    KeyValStoreSystem.storesMap.get(this.id).setValue(store.toString());
   }
 
   @Override
@@ -150,8 +178,6 @@ public class Node extends AbstractActor {
       .match(Update.class, this::onUpdate)
       .match(CoordinatorGet.class, this::onCoordinatorGet)
       .match(CoordinatorUpdate.class, this::onCoordinatorUpdate)
-      //.match(NodeLeaves.class, this::onNodeLeaves)
-      //.match(NodeLeaves.class, this::onNodeLeaves)
       .build();
   }
 
