@@ -32,12 +32,19 @@ public class KeyValStoreSystem {
       this.id = id;
       this.feedbacks = feedbacks;
     }
-    void onFeedback (Node.Feedback feedback) {
+    void onFeedback (Node.Feedback feedback) { // TODO deleteme
       feedbacks.add(feedback.feedback);
+    }
+    void onGetResponse (Node.GetResponse getResponse) {
+      feedbacks.add("Get response: " + getResponse.value);
     }
     @Override
     public Receive createReceive() {
-      return receiveBuilder().match(Node.Feedback.class, this::onFeedback).build();
+      return receiveBuilder()
+        .match(Node.Feedback.class, this::onFeedback)
+        .match(Node.GetResponse.class, this::onGetResponse)
+        // .match(Node.Feedback.class, this::onFeedback)
+        .build();
     }
   }
 
