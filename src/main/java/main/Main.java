@@ -4,6 +4,7 @@ import java.io.IOException;
 
 import client.ClientController;
 import javafx.application.Application;
+import javafx.beans.property.SimpleIntegerProperty;
 import javafx.beans.property.SimpleStringProperty;
 import javafx.event.ActionEvent;
 import javafx.fxml.FXML;
@@ -52,7 +53,8 @@ public class Main extends Application {
   void newNode (int nodeId) throws Exception {
     SimpleStringProperty nodeLogsString = new SimpleStringProperty();
     SimpleStringProperty nodeStoreString = new SimpleStringProperty();
-    system.createNode(nodeId, nodeLogsString, nodeStoreString);
+    SimpleIntegerProperty nodeResponseDelay = new SimpleIntegerProperty(0);
+    system.createNode(nodeId, nodeLogsString, nodeStoreString, nodeResponseDelay);
 
     TextArea logsTa = new TextArea();
     logsTa.setEditable(false);
@@ -77,7 +79,16 @@ public class Main extends Application {
       system.nodeLeaves(nodeId);
       nodesPane.getChildren().remove(vbox);
     });
-    headHbox.getChildren().add(b);
+    TextField delayField = new TextField("0");
+    delayField.setOnKeyTyped((e) -> {
+      try {
+        nodeResponseDelay.setValue(Integer.parseInt(delayField.getText()));
+      } catch (Exception ignored) { }
+    });
+    HBox delayHBox = new HBox(5, new Label("Response delay (ms): "), delayField);
+    delayHBox.setAlignment(Pos.CENTER);
+
+    headHbox.getChildren().addAll(b, delayHBox);
     nodesPane.getChildren().add(vbox);
     newNodeIdField.clear();
   }

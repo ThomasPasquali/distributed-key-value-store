@@ -9,6 +9,7 @@ import akka.actor.ActorRef;
 import akka.actor.ActorSystem;
 import akka.actor.Props;
 import client.ClientController;
+import javafx.beans.property.SimpleIntegerProperty;
 import javafx.beans.property.SimpleStringProperty;
 import javafx.collections.ObservableList;
 
@@ -16,6 +17,7 @@ public class KeyValStoreSystem {
 
   public static final HashMap<Integer, List<String>> logsMap = new HashMap<>();
   public static final HashMap<Integer, SimpleStringProperty> storesMap = new HashMap<>();
+  public static final HashMap<Integer, SimpleIntegerProperty> delaysMap = new HashMap<>();
 
   private final ActorSystem system;
   private final HashMap<Integer, ActorRef> nodes = new HashMap<>();
@@ -36,7 +38,7 @@ public class KeyValStoreSystem {
       feedbacks.add(feedback.feedback);
     }
     void onGetResponse (Node.GetResponse getResponse) {
-      feedbacks.add("Get response: " + getResponse.value);
+      feedbacks.add("Get response [" + (getResponse.status == Node.GetResponse.STATUS.OK ? "OK" : "ERROR") + "]: " + getResponse.value + " (v" + getResponse.version + ")");
     }
     @Override
     public Receive createReceive() {
@@ -66,7 +68,7 @@ public class KeyValStoreSystem {
     }
   }
 
-  public void createNode (int id, SimpleStringProperty logsProp, SimpleStringProperty storeProp) throws Exception {
+  public void createNode (int id, SimpleStringProperty logsProp, SimpleStringProperty storeProp, SimpleIntegerProperty delayProp) throws Exception {
     // Check id
     if (id < 0) {
       throw new Exception("ID must be greater than zero");
@@ -89,6 +91,7 @@ public class KeyValStoreSystem {
 
     // Binding node stores to TextArea
     storesMap.put(id, storeProp);
+    delaysMap.put(id, delayProp);
 
     // Creating Actor (Node)
     ActorRef node = system.actorOf(Node.props(id), "Node_" + id);

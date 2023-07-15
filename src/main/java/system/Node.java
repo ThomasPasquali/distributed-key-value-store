@@ -1,7 +1,9 @@
 package system;
 
 import java.io.Serializable;
+import java.text.SimpleDateFormat;
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.Collections;
 import java.util.Formatter;
 import java.util.HashMap;
@@ -57,10 +59,12 @@ public class Node extends AbstractActor {
     public static enum STATUS { OK, ERROR };
     public final int reqId;
     public final String value;
+    public final int version;
     public final STATUS status;
-    public GetResponse(int reqId, String value, STATUS status) {
+    public GetResponse(int reqId, String value, int version, STATUS status) {
       this.reqId = reqId;
       this.value = value;
+      this.version = version;
       this.status = status;
     }
   }
@@ -104,9 +108,12 @@ public class Node extends AbstractActor {
   public static class StoreValue implements Serializable {
     private int version;
     private String value;
-    public StoreValue(String value) {
-      this.version = 0;
+    public StoreValue(String value, int version) {
+      this.version = version;
       this.value = value;
+    }
+    public StoreValue(String value) {
+      this(value, 0);
     }
     public int getVersion() {
       return version;
@@ -117,6 +124,10 @@ public class Node extends AbstractActor {
     }
     public String getValue() {
       return value;
+    }
+    @Override
+    public String toString () {
+      return value + " (v" + version + ")";
     }
   }
 
@@ -159,7 +170,7 @@ public class Node extends AbstractActor {
   public int R = 0;
   public int W = 0;
   private int reqCount = 0;
-  private HashMap<Integer, PendingRequest<String>> pendingRequests = new HashMap<>();
+  private HashMap<Integer, PendingRequest<StoreValue>> pendingRequests = new HashMap<>();
 
   protected int id;
   protected HashMap<Integer, ActorRef> nodes = new HashMap<>();
@@ -183,7 +194,8 @@ public class Node extends AbstractActor {
   }
 
   private void log(String log) {
-    System.out.println("[Node_" + id + "] " + log);
+    String timestamp = new SimpleDateFormat("HH:mm:ss.SS").format(new java.util.Date());
+    System.out.println(timestamp + ": [Node_" + id + "] " + log);
     KeyValStoreSystem.logsMap.get(this.id).add(log);
   }
 
@@ -193,6 +205,11 @@ public class Node extends AbstractActor {
     }
   }
 
+  /**
+   * Messages will be sent only to other nodes in the system (from the point of view of the current node)
+   * @param m
+   * @param nodeIds
+   */
   void multicast(Serializable m, int[] nodeIds) {
     for (Integer id: nodeIds) {
       ActorRef peer = nodes.get(id);
@@ -208,11 +225,17 @@ public class Node extends AbstractActor {
     W = N / 2 + 1;
   }
 
+  /**
+   * @param key requested ket
+   * @param n nuber of responsible nodes
+   * @return a sorted array of ids
+   */
   private int[] getRequestResponsibleNodes (int key, int n) { // TODO test me
     int i, count = 0;
     List<Integer> ids = new ArrayList<>(nodes.keySet());
+    ids.add(id);
     Collections.sort(ids);
-    for (i = 0; i < ids.size(); ++i) { // TODO include current node
+    for (i = 0; i < ids.size(); ++i) {
       if (ids.get(i) > key) {
         break;
       }
@@ -250,33 +273,64 @@ public class Node extends AbstractActor {
 
   void onCoordinatorGet (CoordinatorGet getRequest) throws InterruptedException {
     log("Coordinating: get(" + getRequest.key + ") ");
-    for (Integer i : getRequestResponsibleNodes(getRequest.key, R)) System.out.println(i + " "); System.out.println();
-    int reqId = reqCount++;
-    pendingRequests.put(reqId, new PendingRequest<>(reqId, getSender(), new Quorum<String>(R)));
-    multicast(new Get(reqId, getRequest.key), getRequestResponsibleNodes(getRequest.key, R));
 
-    Thread.sleep(T);
-    System.out.println("TTTTTTTTTTTT " + pendingRequests.get(reqId));
-    // TODO send error if pendingRequests.get(reqId)
-    // StoreValue v = store.get(getRequest.key);
-    // sender().tell(new Feedback(v == null ? "null" : v.value), getSelf());
+    int[] respNodes = getRequestResponsibleNodes(getRequest.key, N);
+    int reqId = reqCount++;
+    PendingRequest<StoreValue> r = new PendingRequest<>(reqId, getSender(), new Quorum<StoreValue>(R));
+
+    // for (Integer i : respNodes) System.out.println(i);
+    
+    if (Arrays.stream(respNodes).anyMatch((nId) -> nId == id)) {
+      StoreValue v = store.get(getRequest.key);
+      String value = v != null ? v.value : null;
+      Integer version = v != null ? v.version : -1;
+      r.quorum.inc(new StoreValue(value, version));
+    }
+
+    pendingRequests.put(reqId, r);
+    multicast(new Get(reqId, getRequest.key), respNodes);
+
+    ActorRef self = getSelf();
+    Utils.setTimeout(() -> {
+      PendingRequest<StoreValue> pr = pendingRequests.get(reqId);
+      if (pr != null) { // Request still there after timeout
+        log("Timeout reached for GetRequest #" + reqId);
+        pr.client.tell(new GetResponse(reqId, null, -2, GetResponse.STATUS.ERROR), self);
+        pendingRequests.remove(reqId);
+      }
+    }, T);
   }
 
   void onGet (Get getRequest) {
     log("Get(" + getRequest.key + ") from " + getSender().path().name());
     StoreValue v = store.get(getRequest.key);
-    getSender().tell(new GetResponse(getRequest.reqId, v != null ? v.value : null, GetResponse.STATUS.OK), getSender());
+    String value = v != null ? v.value : null;
+    Integer version = v != null ? v.version : -1;
+    ActorRef peer = getSender(), self = getSelf();
+    Utils.setTimeout(() -> { // Add artificial delay
+      peer.tell(new GetResponse(getRequest.reqId, value, version, GetResponse.STATUS.OK), self);
+    }, KeyValStoreSystem.delaysMap.get(id).get());
   }
 
   void onGetResponse (GetResponse getResponse) {
-    log("Response for Get #" + getResponse.reqId + " from " + getSender().path().name() + ": " + getResponse.value);
-    PendingRequest<String> r = pendingRequests.get(getResponse.reqId);
+    PendingRequest<StoreValue> r = pendingRequests.get(getResponse.reqId);
+    log((r == null ? "[IGNORED] " : "") + "Response for Get #" + getResponse.reqId + " from " + getSender().path().name() + ": " + getResponse.value + " (v" + getResponse.version + ")");
+    
     if (r != null) {
-      r.quorum.inc(getResponse.value);
+      r.quorum.inc(new StoreValue(getResponse.value, getResponse.version));
+
       if (r.quorum.reached()) {
         log("Read quorum reached for Get #" + getResponse.reqId);
-        // TODO check majority for r.quorum.values
-        r.client.tell(new GetResponse(getResponse.reqId, r.quorum.values.get(0), GetResponse.STATUS.OK), getSelf());
+        
+        // for (StoreValue v : r.quorum.values) System.out.println(v);
+        
+        StoreValue value = r.quorum.values.get(0);
+        for (StoreValue v : r.quorum.values) {
+          if (v.version > value.version) {
+            value = v;
+          }
+        }
+        r.client.tell(new GetResponse(getResponse.reqId, value.value, value.version, GetResponse.STATUS.OK), getSelf());
         pendingRequests.remove(getResponse.reqId);
       }
     } // TODO else something?
