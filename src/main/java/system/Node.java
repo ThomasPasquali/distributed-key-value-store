@@ -16,8 +16,36 @@ import akka.actor.Props;
 
 public class Node extends AbstractActor {
 
-  /* STATIC */
+  public static final int T = 1000;
+  public static final int N = 3;
+  public static final int R = 2;
+  public static final int W = 2;
+  
+  private int reqCount = 0;
+  private HashMap<Integer, PendingRequest<StoreValue>> pendingRequests = new HashMap<>();
 
+  protected int idNode;
+  protected HashMap<Integer, ActorRef> nodes = new HashMap<>();
+  protected HashMap<Integer, StoreValue> store = new HashMap<>() { // FIXME List<StoreValue> keep history??
+    @Override
+    public String toString () {
+      StringJoiner sj = new StringJoiner("\n");
+      for (Integer k : store.keySet()) {
+        StoreValue v = store.get(k);
+        Formatter fmt = new Formatter();
+        sj.add(fmt.format("%-3d -> %-15s (v%d)", k, v.getValue(), v.getVersion()).toString());
+        fmt.flush();
+        fmt.close();
+      }
+      return sj.toString();
+    }
+  }; 
+
+  /* -------------------------------------- STATIC MESSAGE TYPES ---------------------------------------- */
+
+  public static enum ACT    { GET, UPDATE };
+  public static enum STATUS { OK,  ERROR  };
+  
   public static class NodeJoins implements Serializable {
     public final ActorRef newNode;
     public final int id;
@@ -44,42 +72,33 @@ public class Node extends AbstractActor {
   public static class Get implements Serializable {
     public final int reqId;
     public final int key;
-    public Get(int reqId, int key) {
+    public final ACT act;
+    public Get(int reqId, int key, ACT act) {
       this.reqId = reqId;
       this.key = key;
-    }
-  }
-  public static class CoordinatorGet implements Serializable { // FIXME do we need this or can just use Get?
-    public final int key;
-    public CoordinatorGet(int key) {
-      this.key = key;
-    }
-  }
-  public static class GetResponse implements Serializable {
-    public static enum STATUS { OK, ERROR };
-    public final int reqId;
-    public final String value;
-    public final int version;
-    public final STATUS status;
-    public GetResponse(int reqId, String value, int version, STATUS status) {
-      this.reqId = reqId;
-      this.value = value;
-      this.version = version;
-      this.status = status;
+      this.act = act;
     }
   }
 
   public static class Update implements Serializable {
     public final int reqId;
     public final int key;
-    public final String value;
-    public Update(int reqId, int key, String value) {
+    public final StoreValue value;
+    public Update(int reqId, int key, StoreValue value) {
       this.reqId = reqId;
       this.key = key;
       this.value = value;
     }
   }
-  public static class CoordinatorUpdate implements Serializable { // FIXME do we need this or can just use Update?
+
+  public static class CoordinatorGet implements Serializable { 
+    public final int key;
+    public CoordinatorGet(int key) {
+      this.key = key;
+    }
+  }
+
+  public static class CoordinatorUpdate implements Serializable { 
     public final int key;
     public final String value;
     public CoordinatorUpdate(int key, String value) {
@@ -87,47 +106,47 @@ public class Node extends AbstractActor {
       this.value = value;
     }
   }
-  public static class UpdateResponse implements Serializable {
-    public static enum STATUS { OK, ERROR };
+
+  public static class GetResponse implements Serializable {
     public final int reqId;
+    public final StoreValue value;
     public final STATUS status;
-    public UpdateResponse(int reqId, STATUS status) {
+    public final ACT act;
+    public GetResponse(int reqId, StoreValue value, STATUS status, ACT act) {
       this.reqId = reqId;
+      this.value = value;
       this.status = status;
+      this.act = act;
     }
   }
 
-  // Just for the UI
   public static class Feedback implements Serializable {
     public final String feedback;
-    public Feedback(String feedback) {
-      this.feedback = feedback;
+    public Feedback(int reqId, StoreValue value, STATUS status, ACT act) {
+      String str = "FEEDBACK: " + act + " #" + reqId + " [" + status + "]";
+      if (value != null) { str += " | " + value; }
+      this.feedback = str;
     }
   }
 
-  public static class StoreValue implements Serializable {
-    private int version;
-    private String value;
-    public StoreValue(String value, int version) {
-      this.version = version;
-      this.value = value;
+  /* -------------------------------------- STATIC ---------------------------------------- */
+
+  public static class Quorum<T> {
+    private int quorumThreshold;
+    private int quorumValue;
+    List<T> values = new ArrayList<>(10);
+    
+    public Quorum (int quorumThreshold) {
+      this.quorumThreshold = quorumThreshold;
     }
-    public StoreValue(String value) {
-      this(value, 0);
+    
+    public int inc (T value) {
+      values.add(value);
+      return ++quorumValue;
     }
-    public int getVersion() {
-      return version;
-    }
-    public void setValue(String value) {
-      this.value = value;
-      ++version;
-    }
-    public String getValue() {
-      return value;
-    }
-    @Override
-    public String toString () {
-      return value + " (v" + version + ")";
+    
+    public boolean reached () {
+      return quorumValue >= quorumThreshold;
     }
   }
 
@@ -135,6 +154,7 @@ public class Node extends AbstractActor {
     int reqId;
     ActorRef client;
     Quorum<T> quorum;
+    
     public PendingRequest (int reqId, ActorRef client, Quorum<T> quorum) {
       this.reqId = reqId;
       this.client = client;
@@ -142,61 +162,20 @@ public class Node extends AbstractActor {
     }
   }
 
-  public static class Quorum<T> {
-    private int quorumThreshold;
-    private int quorumValue;
-    List<T> values = new ArrayList<>(10);
-    public Quorum (int quorumThreshold) {
-      this.quorumThreshold = quorumThreshold;
-    }
-    public int inc (T value) {
-      values.add(value);
-      return ++quorumValue;
-    }
-    public boolean reached () {
-      return quorumValue >= quorumThreshold;
-    }
-  }
-
-  static public Props props(int id) {
+  public static Props props(int id) {
     return Props.create(Node.class, () -> new Node(id));
   }
 
-  /* CLASS */
-
-  public static final int T = 5000;
-  // FIXME should they be static?
-  public int N = 0;
-  public int R = 0;
-  public int W = 0;
-  private int reqCount = 0;
-  private HashMap<Integer, PendingRequest<StoreValue>> pendingRequests = new HashMap<>();
-
-  protected int id;
-  protected HashMap<Integer, ActorRef> nodes = new HashMap<>();
-  protected HashMap<Integer, StoreValue> store = new HashMap<>() { // FIXME List<StoreValue> keep history??
-    @Override
-    public String toString () {
-      StringJoiner sj = new StringJoiner("\n");
-      for (Integer k : store.keySet()) {
-        StoreValue v = store.get(k);
-        Formatter fmt = new Formatter();
-        sj.add(fmt.format("%-3d -> %-15s (v%d)", k, v.value, v.version).toString());
-        fmt.flush();
-        fmt.close();
-      }
-      return sj.toString();
-    }
-  }; 
+  /* -------------------------------------- CLASS ---------------------------------------- */
 
   public Node(int id) {
-    this.id = id;
+    this.idNode = id;
   }
 
   private void log(String log) {
     String timestamp = new SimpleDateFormat("HH:mm:ss.SS").format(new java.util.Date());
-    System.out.println(timestamp + ": [Node_" + id + "] " + log);
-    KeyValStoreSystem.logsMap.get(this.id).add(log);
+    System.out.println(timestamp + ": [Node_" + idNode + "] " + log);
+    KeyValStoreSystem.logsMap.get(this.idNode).add(log);
   }
 
   void multicast(Serializable m) {
@@ -206,7 +185,7 @@ public class Node extends AbstractActor {
   }
 
   /**
-   * Messages will be sent only to other nodes in the system (from the point of view of the current node)
+   * Messages are sent only to other nodes in the system (from the point of view of the current node)
    * @param m
    * @param nodeIds
    */
@@ -219,146 +198,161 @@ public class Node extends AbstractActor {
     }
   }
 
-  private void computeQuorumConstants () { // FIXME compute wisely
-    N = Math.min(4, nodes.size()); 
-    R = N / 2 + 1;
-    W = N / 2 + 1;
-  }
-
   /**
-   * @param key requested ket
-   * @param n nuber of responsible nodes
+   * @param key requested item's key
+   * 
    * @return a sorted array of ids
    */
-  private int[] getRequestResponsibleNodes (int key, int n) { // TODO test me
+  private int[] getRequestResponsibleNodes (int key) { // TODO test me
     int i, count = 0;
+    boolean last = true;
+    
     List<Integer> ids = new ArrayList<>(nodes.keySet());
-    ids.add(id);
+    ids.add(idNode);
     Collections.sort(ids);
     for (i = 0; i < ids.size(); ++i) {
       if (ids.get(i) > key) {
-        break;
+        last = false; break;
       }
     }
-    int[] res = new int[n];
-    while (count < n) {
+    
+    // TODO 
+    if (last) { i--; }
+    
+    int[] res = new int[N];
+    while (count < N) {
       res[count++] = ids.get(i);
       i = (i + 1) % ids.size();
     }
+    
     return res;
   }
 
   void onNodeJoins (NodeJoins nodeJoins) {
     nodes.put(nodeJoins.id, nodeJoins.newNode);
-    computeQuorumConstants();
     // Say hello to the new node
-    nodeJoins.newNode.tell(new NodeHello(id), getSelf());
-
+    nodeJoins.newNode.tell(new NodeHello(idNode), getSelf());
     log("Node " + nodeJoins.id + " joined! -> N: " + N + ", R: " + R + ", W: " + W);
   }
 
   void onNodeHello (NodeHello nodeHello) {
     nodes.put(nodeHello.id, getSender());
-    computeQuorumConstants();
-
     log("Hello from " + nodeHello.id + " -> N: " + N + ", R: " + R + ", W: " + W);
   }
 
   void onNodeLeaves (NodeLeaves nodeLeaves) {
     nodes.remove(nodeLeaves.id);
-    computeQuorumConstants();
-
     log("Node " + nodeLeaves.id + " left! -> N: " + N + ", R: " + R + ", W: " + W);
   }
+
+  void onGet (Get getRequest) {
+    log("Get(" + getRequest.key + ") from " + getSender().path().name());
+    StoreValue value = store.get(getRequest.key);
+    
+    ActorRef peer = getSender(), self = getSelf();
+    Utils.setTimeout(() -> { // Add artificial delay
+      peer.tell(new GetResponse(getRequest.reqId, value == null ? new StoreValue(null, -1) : value, STATUS.OK, getRequest.act), self);
+    }, KeyValStoreSystem.delaysMap.get(idNode).get());
+  }
+
+  void onUpdate (Update updateRequest) {
+    log("Update(" + updateRequest.key + ", " + updateRequest.value + ") from " + getSender().path().name());
+    store.put(updateRequest.key, updateRequest.value);
+  }  
 
   void onCoordinatorGet (CoordinatorGet getRequest) throws InterruptedException {
     log("Coordinating: get(" + getRequest.key + ") ");
 
-    int[] respNodes = getRequestResponsibleNodes(getRequest.key, N);
+    int[] respNodes = getRequestResponsibleNodes(getRequest.key);
     int reqId = reqCount++;
     PendingRequest<StoreValue> r = new PendingRequest<>(reqId, getSender(), new Quorum<StoreValue>(R));
-
-    // for (Integer i : respNodes) System.out.println(i);
     
-    if (Arrays.stream(respNodes).anyMatch((nId) -> nId == id)) {
-      StoreValue v = store.get(getRequest.key);
-      String value = v != null ? v.value : null;
-      Integer version = v != null ? v.version : -1;
-      r.quorum.inc(new StoreValue(value, version));
+    if (Arrays.stream(respNodes).anyMatch((nId) -> nId == idNode)) {
+      StoreValue value = store.get(getRequest.key);
+      r.quorum.inc(value == null ? new StoreValue(null, -1) : value);
     }
 
     pendingRequests.put(reqId, r);
-    multicast(new Get(reqId, getRequest.key), respNodes);
+    multicast(new Get(reqId, getRequest.key, ACT.GET), respNodes);
 
     ActorRef self = getSelf();
     Utils.setTimeout(() -> {
       PendingRequest<StoreValue> pr = pendingRequests.get(reqId);
       if (pr != null) { // Request still there after timeout
         log("Timeout reached for GetRequest #" + reqId);
-        pr.client.tell(new GetResponse(reqId, null, -2, GetResponse.STATUS.ERROR), self);
+        pr.client.tell(new GetResponse(reqId, new StoreValue(null), STATUS.ERROR, ACT.GET), self);
         pendingRequests.remove(reqId);
       }
     }, T);
   }
 
-  void onGet (Get getRequest) {
-    log("Get(" + getRequest.key + ") from " + getSender().path().name());
-    StoreValue v = store.get(getRequest.key);
-    String value = v != null ? v.value : null;
-    Integer version = v != null ? v.version : -1;
-    ActorRef peer = getSender(), self = getSelf();
-    Utils.setTimeout(() -> { // Add artificial delay
-      peer.tell(new GetResponse(getRequest.reqId, value, version, GetResponse.STATUS.OK), self);
-    }, KeyValStoreSystem.delaysMap.get(id).get());
+  void onCoordinatorUpdate (CoordinatorUpdate updateRequest) throws InterruptedException {
+    log("Coordinating: update(" + updateRequest.key + ", " + updateRequest.value + ")");
+
+    int reqId = reqCount++;
+    int[] respNodes = getRequestResponsibleNodes(updateRequest.key);
+
+    boolean updateLocal = Arrays.stream(respNodes).anyMatch((nId) -> nId == idNode);
+    PendingRequest<StoreValue> pending = new PendingRequest<>(reqId, getSender(), new Quorum<StoreValue>(W));
+    if (updateLocal) {
+      StoreValue value = store.get(updateRequest.key);
+      pending.quorum.inc(value == null ? new StoreValue(null, -1) : value);
+    }
+
+    pendingRequests.put(reqId, pending);
+    multicast(new Get(reqId, updateRequest.key, ACT.UPDATE), respNodes);
+
+    Utils.setTimeout(() -> {
+      // Try to get the request after the timeout; if it is still pending return an error
+      PendingRequest<StoreValue> req = pendingRequests.get(reqId);
+      if (!req.quorum.reached()) { 
+        log("Timeout reached for updateRequest #" + reqId);
+        req.client.tell(new GetResponse(reqId, new StoreValue(null), STATUS.ERROR, ACT.UPDATE), getSelf());
+      } 
+      else {        
+        StoreValue freshValue = req.quorum.values.get(0);    
+        for (StoreValue v : req.quorum.values) {
+          if (v.getVersion() > freshValue.getVersion()) {
+            freshValue = v;
+          }
+        }
+
+        StoreValue newValue = new StoreValue(updateRequest.value, freshValue.getVersion() + 1);
+        if (updateLocal) { store.put(updateRequest.key, newValue); }
+
+        multicast(new Update(reqId, updateRequest.key, newValue), getRequestResponsibleNodes(updateRequest.key));
+      }
+      pendingRequests.remove(reqId);
+    }, T);
+
+    // KeyValStoreSystem.storesMap.get(this.id).setValue(store.toString());
   }
 
   void onGetResponse (GetResponse getResponse) {
-    PendingRequest<StoreValue> r = pendingRequests.get(getResponse.reqId);
-    log((r == null ? "[IGNORED] " : "") + "Response for Get #" + getResponse.reqId + " from " + getSender().path().name() + ": " + getResponse.value + " (v" + getResponse.version + ")");
+    PendingRequest<StoreValue> pending = pendingRequests.get(getResponse.reqId);
+    String str_log = "Response for Get #" + getResponse.reqId + " from " + getSender().path().name() + ": " + getResponse.value;
     
-    if (r != null) {
-      r.quorum.inc(new StoreValue(getResponse.value, getResponse.version));
-
-      if (r.quorum.reached()) {
-        log("Read quorum reached for Get #" + getResponse.reqId);
-        
-        // for (StoreValue v : r.quorum.values) System.out.println(v);
-        
-        StoreValue value = r.quorum.values.get(0);
-        for (StoreValue v : r.quorum.values) {
-          if (v.version > value.version) {
-            value = v;
-          }
-        }
-        r.client.tell(new GetResponse(getResponse.reqId, value.value, value.version, GetResponse.STATUS.OK), getSelf());
-        pendingRequests.remove(getResponse.reqId);
-      }
-    } // TODO else something?
-  }
-
-  void onUpdate (Update updateRequest) {
-    log("Update(" + updateRequest.key + ", " + updateRequest.value + ") from " + getSender().path().name());
-    // TODO
-  }
-
-  void onUpdateResponse (UpdateResponse updateResponse) {
-    // TODO
-  }
-
-  void onCoordinatorUpdate (CoordinatorUpdate updateRequest) {
-    log("Coordinating: update(" + updateRequest.key + ", " + updateRequest.value + ")");
-    multicast(new Update(reqCount++, updateRequest.key, updateRequest.value), getRequestResponsibleNodes(updateRequest.key, W));
-
-    // TODO send/update only after quorum
-    StoreValue oldItem = store.get(updateRequest.key);
-    if (oldItem != null) {
-      ++oldItem.version;
-      oldItem.value = updateRequest.value;
-    } else {
-      store.put(updateRequest.key, new StoreValue(updateRequest.value));
+    if (pending == null || pending.quorum.reached()) {
+      log("[IGNORED] " + str_log);
+      return;
     }
-    sender().tell(new Feedback("Banananana"), getSelf());
-    KeyValStoreSystem.storesMap.get(this.id).setValue(store.toString());
+
+    log(str_log);
+    pending.quorum.inc(new StoreValue(getResponse.value.getValue(), getResponse.value.getVersion()));
+
+    if (pending.quorum.reached()) {
+      log("Quorum reached for " + getResponse.act + " #" + getResponse.reqId);
+      
+      StoreValue freshValue = pending.quorum.values.get(0);
+      for (StoreValue v : pending.quorum.values) {
+        if (v.getVersion() > freshValue.getVersion()) {
+          freshValue = v;
+        }
+      }
+
+      pending.client.tell(new Feedback(getResponse.reqId, getResponse.act == ACT.GET ? freshValue : null, STATUS.OK, getResponse.act), getSelf());
+      if (getResponse.act == ACT.GET) { pendingRequests.remove(getResponse.reqId); }
+    }
   }
 
   @Override
@@ -368,11 +362,10 @@ public class Node extends AbstractActor {
       .match(NodeHello.class, this::onNodeHello)
       .match(NodeLeaves.class, this::onNodeLeaves)
       .match(Get.class, this::onGet)
-      .match(GetResponse.class, this::onGetResponse)
-      .match(Update.class, this::onUpdate)
-      .match(UpdateResponse.class, this::onUpdateResponse)
+      .match(Update.class, this::onUpdate)      
       .match(CoordinatorGet.class, this::onCoordinatorGet)
       .match(CoordinatorUpdate.class, this::onCoordinatorUpdate)
+      .match(GetResponse.class, this::onGetResponse)
       .build();
   }
 
