@@ -14,6 +14,8 @@ import akka.actor.AbstractActor;
 import akka.actor.ActorRef;
 import akka.actor.Props;
 
+import system.PendingRequest.ACT;
+
 public class Node extends AbstractActor {
 
   public static final int T = 1000;
@@ -22,11 +24,11 @@ public class Node extends AbstractActor {
   public static final int W = 2;
   
   private int reqCount = 0;
-  private HashMap<Integer, PendingRequest<StoreValue>> pendingRequests = new HashMap<>();
+  private HashMap<Integer, PendingRequest.Request<StoreValue>> pendingRequests = new HashMap<>();
 
   protected int idNode;
   protected HashMap<Integer, ActorRef> nodes = new HashMap<>();
-  protected HashMap<Integer, StoreValue> store = new HashMap<>() { // FIXME List<StoreValue> keep history??
+  protected HashMap<Integer, StoreValue> store = new HashMap<>() {
     @Override
     public String toString () {
       StringJoiner sj = new StringJoiner("\n");
@@ -43,7 +45,6 @@ public class Node extends AbstractActor {
 
   /* -------------------------------------- STATIC MESSAGE TYPES ---------------------------------------- */
 
-  public static enum ACT    { GET, UPDATE };
   public static enum STATUS { OK,  ERROR  };
   
   public static class NodeJoins implements Serializable {
@@ -72,11 +73,9 @@ public class Node extends AbstractActor {
   public static class Get implements Serializable {
     public final int reqId;
     public final int key;
-    public final ACT act;
-    public Get(int reqId, int key, ACT act) {
+    public Get(int reqId, int key) {
       this.reqId = reqId;
       this.key = key;
-      this.act = act;
     }
   }
 
@@ -111,12 +110,10 @@ public class Node extends AbstractActor {
     public final int reqId;
     public final StoreValue value;
     public final STATUS status;
-    public final ACT act;
-    public GetResponse(int reqId, StoreValue value, STATUS status, ACT act) {
+    public GetResponse(int reqId, StoreValue value, STATUS status) {
       this.reqId = reqId;
       this.value = value;
       this.status = status;
-      this.act = act;
     }
   }
 
@@ -129,47 +126,14 @@ public class Node extends AbstractActor {
     }
   }
 
-  /* -------------------------------------- STATIC ---------------------------------------- */
-
-  public static class Quorum<T> {
-    private int quorumThreshold;
-    private int quorumValue;
-    List<T> values = new ArrayList<>(10);
-    
-    public Quorum (int quorumThreshold) {
-      this.quorumThreshold = quorumThreshold;
-    }
-    
-    public int inc (T value) {
-      values.add(value);
-      return ++quorumValue;
-    }
-    
-    public boolean reached () {
-      return quorumValue >= quorumThreshold;
-    }
-  }
-
-  public static class PendingRequest<T> {
-    int reqId;
-    ActorRef client;
-    Quorum<T> quorum;
-    
-    public PendingRequest (int reqId, ActorRef client, Quorum<T> quorum) {
-      this.reqId = reqId;
-      this.client = client;
-      this.quorum = quorum;
-    }
-  }
-
-  public static Props props(int id) {
-    return Props.create(Node.class, () -> new Node(id));
-  }
-
   /* -------------------------------------- CLASS ---------------------------------------- */
 
   public Node(int id) {
     this.idNode = id;
+  }
+
+  public static Props props(int id) {
+    return Props.create(Node.class, () -> new Node(id));
   }
 
   private void log(String log) {
@@ -199,11 +163,10 @@ public class Node extends AbstractActor {
   }
 
   /**
-   * @param key requested item's key
-   * 
-   * @return a sorted array of ids
+   * @param key Key of the involved item
+   * @return A sorted array of ids representing the nodes responsible of the item
    */
-  private int[] getRequestResponsibleNodes (int key) { // TODO test me
+  private int[] getInvolvedNodes (int key) { // TODO test me
     int i, count = 0;
     boolean last = true;
     
@@ -216,7 +179,6 @@ public class Node extends AbstractActor {
       }
     }
     
-    // TODO 
     if (last) { i--; }
     
     int[] res = new int[N];
@@ -228,130 +190,135 @@ public class Node extends AbstractActor {
     return res;
   }
 
-  void onNodeJoins (NodeJoins nodeJoins) {
-    nodes.put(nodeJoins.id, nodeJoins.newNode);
-    // Say hello to the new node
-    nodeJoins.newNode.tell(new NodeHello(idNode), getSelf());
-    log("Node " + nodeJoins.id + " joined! -> N: " + N + ", R: " + R + ", W: " + W);
-  }
-
-  void onNodeHello (NodeHello nodeHello) {
-    nodes.put(nodeHello.id, getSender());
-    log("Hello from " + nodeHello.id + " -> N: " + N + ", R: " + R + ", W: " + W);
-  }
-
-  void onNodeLeaves (NodeLeaves nodeLeaves) {
-    nodes.remove(nodeLeaves.id);
-    log("Node " + nodeLeaves.id + " left! -> N: " + N + ", R: " + R + ", W: " + W);
-  }
-
-  void onGet (Get getRequest) {
-    log("Get(" + getRequest.key + ") from " + getSender().path().name());
-    StoreValue value = store.get(getRequest.key);
-    
-    ActorRef peer = getSender(), self = getSelf();
-    Utils.setTimeout(() -> { // Add artificial delay
-      peer.tell(new GetResponse(getRequest.reqId, value == null ? new StoreValue(null, -1) : value, STATUS.OK, getRequest.act), self);
-    }, KeyValStoreSystem.delaysMap.get(idNode).get());
-  }
-
-  void onUpdate (Update updateRequest) {
-    log("Update(" + updateRequest.key + ", " + updateRequest.value + ") from " + getSender().path().name());
-    store.put(updateRequest.key, updateRequest.value);
-  }  
-
-  void onCoordinatorGet (CoordinatorGet getRequest) throws InterruptedException {
-    log("Coordinating: get(" + getRequest.key + ") ");
-
-    int[] respNodes = getRequestResponsibleNodes(getRequest.key);
-    int reqId = reqCount++;
-    PendingRequest<StoreValue> r = new PendingRequest<>(reqId, getSender(), new Quorum<StoreValue>(R));
-    
-    if (Arrays.stream(respNodes).anyMatch((nId) -> nId == idNode)) {
-      StoreValue value = store.get(getRequest.key);
-      r.quorum.inc(value == null ? new StoreValue(null, -1) : value);
-    }
-
-    pendingRequests.put(reqId, r);
-    multicast(new Get(reqId, getRequest.key, ACT.GET), respNodes);
-
-    ActorRef self = getSelf();
+  /**
+   * Sets a timeout for a request solving; in case the request is still pending gives to the client a feedback of failure
+   * @param self   The coordinator node
+   * @param reqId  The request ID
+   */
+  void setQueryTimeout (ActorRef self, int reqId) {
     Utils.setTimeout(() -> {
-      PendingRequest<StoreValue> pr = pendingRequests.get(reqId);
-      if (pr != null) { // Request still there after timeout
-        log("Timeout reached for GetRequest #" + reqId);
-        pr.client.tell(new GetResponse(reqId, new StoreValue(null), STATUS.ERROR, ACT.GET), self);
+      PendingRequest.Request<StoreValue> req = pendingRequests.get(reqId);
+      // Check if the request is still pending after timeout
+      if (req != null) { 
+        log("Timeout for "+ req.act + " #" + reqId);
+        req.client.tell(new Feedback(reqId, null, STATUS.ERROR, req.act), self);
         pendingRequests.remove(reqId);
       }
     }, T);
   }
 
-  void onCoordinatorUpdate (CoordinatorUpdate updateRequest) throws InterruptedException {
-    log("Coordinating: update(" + updateRequest.key + ", " + updateRequest.value + ")");
+  /* -------------------------------------- MESSAGE HANDLERS ---------------------------------------- */
 
+  void onNodeJoins (NodeJoins nodeJoins) {
+    nodes.put(nodeJoins.id, nodeJoins.newNode);
+    // Say hello to the new node
+    nodeJoins.newNode.tell(new NodeHello(idNode), getSelf());
+    log("Node " + nodeJoins.id + " joined!");
+  }
+
+  void onNodeHello (NodeHello nodeHello) {
+    nodes.put(nodeHello.id, getSender());
+    log("Hello from " + nodeHello.id);
+  }
+
+  void onNodeLeaves (NodeLeaves nodeLeaves) {
+    nodes.remove(nodeLeaves.id);
+    log("Node " + nodeLeaves.id + " left!");
+  }
+
+  void onGet (Get getRequest) {
+    log("Get(" + getRequest.key + ") from " + getSender().path().name());
+    StoreValue value = store.get(getRequest.key); // Try to get value from the store
+    
+    // Send value to the sender
+    ActorRef peer = getSender(), self = getSelf();
+    Utils.setTimeout(() -> { // Add artificial delay
+      peer.tell(new GetResponse(getRequest.reqId, value == null ? new StoreValue(null, -1) : value, STATUS.OK), self);
+    }, KeyValStoreSystem.delaysMap.get(idNode).get());
+  }
+
+  void onUpdate (Update updateRequest) {
+    log("Update(" + updateRequest.key + ", " + updateRequest.value + ") from " + getSender().path().name());
+    store.put(updateRequest.key, updateRequest.value); // Update value in the store
+    KeyValStoreSystem.storesMap.get(this.idNode).setValue(store.toString()); // Update UI
+  }  
+
+  void onCoordinatorGet (CoordinatorGet getRequest) {
+    log("Coordinating: get(" + getRequest.key + ") ");
+
+    // Create a pending GET Request
     int reqId = reqCount++;
-    int[] respNodes = getRequestResponsibleNodes(updateRequest.key);
-
-    boolean updateLocal = Arrays.stream(respNodes).anyMatch((nId) -> nId == idNode);
-    PendingRequest<StoreValue> pending = new PendingRequest<>(reqId, getSender(), new Quorum<StoreValue>(W));
-    if (updateLocal) {
-      StoreValue value = store.get(updateRequest.key);
-      pending.quorum.inc(value == null ? new StoreValue(null, -1) : value);
+    int[] involvedNodes = getInvolvedNodes(getRequest.key);
+    PendingRequest.Request<StoreValue> req = new PendingRequest.Get<>(reqId, getSender(), new PendingRequest.Quorum<StoreValue>(R));
+    
+    // Check if the coordinator node should have the value
+    if (Arrays.stream(involvedNodes).anyMatch((nId) -> nId == idNode)) {
+      StoreValue value = store.get(getRequest.key);
+      req.quorum.inc(value == null ? new StoreValue(null, -1) : value); // Increment the quorum
     }
 
-    pendingRequests.put(reqId, pending);
-    multicast(new Get(reqId, updateRequest.key, ACT.UPDATE), respNodes);
+    pendingRequests.put(reqId, req); // Put the request in the container
+    multicast(new Get(reqId, getRequest.key), involvedNodes); // Send a multicast to involved nodes
+    setQueryTimeout(getSelf(), reqId); 
+  }
 
-    Utils.setTimeout(() -> {
-      // Try to get the request after the timeout; if it is still pending return an error
-      PendingRequest<StoreValue> req = pendingRequests.get(reqId);
-      if (!req.quorum.reached()) { 
-        log("Timeout reached for updateRequest #" + reqId);
-        req.client.tell(new GetResponse(reqId, new StoreValue(null), STATUS.ERROR, ACT.UPDATE), getSelf());
-      } 
-      else {        
-        StoreValue freshValue = req.quorum.values.get(0);    
-        for (StoreValue v : req.quorum.values) {
-          if (v.getVersion() > freshValue.getVersion()) {
-            freshValue = v;
-          }
-        }
+  void onCoordinatorUpdate (CoordinatorUpdate updateRequest) {
+    log("Coordinating: update(" + updateRequest.key + ", " + updateRequest.value + ")");
 
-        StoreValue newValue = new StoreValue(updateRequest.value, freshValue.getVersion() + 1);
-        if (updateLocal) { store.put(updateRequest.key, newValue); }
+    // Create a pending UPDATE Request
+    int reqId = reqCount++;
+    int[] involvedNodes = getInvolvedNodes(updateRequest.key);
+    PendingRequest.Update<StoreValue> req = new PendingRequest.Update<>(reqId, getSender(), new PendingRequest.Quorum<StoreValue>(W), updateRequest.key, updateRequest.value);
+    req.setInvolvedNodes(involvedNodes, this.idNode);
+    
+    // Check if the coordinator node should have the value
+    if (req.updateLocal) {
+      StoreValue value = store.get(updateRequest.key);
+      req.quorum.inc(value == null ? new StoreValue(null, -1) : value);  // Increment the quorum
+    }
 
-        multicast(new Update(reqId, updateRequest.key, newValue), getRequestResponsibleNodes(updateRequest.key));
-      }
-      pendingRequests.remove(reqId);
-    }, T);
-
-    // KeyValStoreSystem.storesMap.get(this.id).setValue(store.toString());
+    pendingRequests.put(reqId, req); // Put the request in the container
+    multicast(new Get(reqId, updateRequest.key), involvedNodes); // Send a multicast to involved nodes
+    setQueryTimeout(getSelf(), reqId);
   }
 
   void onGetResponse (GetResponse getResponse) {
-    PendingRequest<StoreValue> pending = pendingRequests.get(getResponse.reqId);
     String str_log = "Response for Get #" + getResponse.reqId + " from " + getSender().path().name() + ": " + getResponse.value;
+    PendingRequest.Request<StoreValue> req = pendingRequests.get(getResponse.reqId); // Get pending request from id
     
-    if (pending == null || pending.quorum.reached()) {
+    // Exit if the request has been already satisfied
+    if (req == null || req.quorum.reached()) {
       log("[IGNORED] " + str_log);
       return;
     }
 
     log(str_log);
-    pending.quorum.inc(new StoreValue(getResponse.value.getValue(), getResponse.value.getVersion()));
+    req.quorum.inc(new StoreValue(getResponse.value.getValue(), getResponse.value.getVersion())); // Increment the quorum
 
-    if (pending.quorum.reached()) {
-      log("Quorum reached for " + getResponse.act + " #" + getResponse.reqId);
-      
-      StoreValue freshValue = pending.quorum.values.get(0);
-      for (StoreValue v : pending.quorum.values) {
-        if (v.getVersion() > freshValue.getVersion()) {
-          freshValue = v;
-        }
+    // Exit if the quorum has not been reached yet
+    if (!req.quorum.reached()) { return; }
+
+    log("Quorum reached for " + req.act + " #" + getResponse.reqId);
+    
+    // Get the fresher value from those received
+    StoreValue freshValue = req.quorum.values.get(0);
+    for (StoreValue v : req.quorum.values) {
+      if (v.getVersion() > freshValue.getVersion()) {
+        freshValue = v;
       }
+    }
 
-      pending.client.tell(new Feedback(getResponse.reqId, getResponse.act == ACT.GET ? freshValue : null, STATUS.OK, getResponse.act), getSelf());
-      if (getResponse.act == ACT.GET) { pendingRequests.remove(getResponse.reqId); }
+    // Give feedback to the client and remove pending request from the container
+    req.client.tell(new Feedback(getResponse.reqId, req.act == ACT.GET ? freshValue : null, STATUS.OK, req.act), getSelf());
+    pendingRequests.remove(getResponse.reqId);
+    
+    // Send update to the involved nodes 
+    if (req.act == ACT.UPDATE) {
+      PendingRequest.Update<StoreValue> updateReq = (PendingRequest.Update<StoreValue>) req; // Cast the request to update type
+      StoreValue newValue = new StoreValue(updateReq.value, freshValue.getVersion() + 1); // Create new value
+      if (updateReq.updateLocal) { store.put(updateReq.key, newValue); } // Update local value if required
+      multicast(new Update(updateReq.reqId, updateReq.key, newValue), updateReq.involvedNodes); // Send messages
+      KeyValStoreSystem.storesMap.get(this.idNode).setValue(store.toString()); // Update UI
     }
   }
 
