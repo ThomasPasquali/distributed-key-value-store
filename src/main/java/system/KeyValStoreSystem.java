@@ -3,6 +3,7 @@ package system;
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
+import java.util.Optional;
 
 import akka.actor.AbstractActor;
 import akka.actor.ActorRef;
@@ -90,11 +91,12 @@ public class KeyValStoreSystem {
 
     // Creating Actor (Node)
     ActorRef node = system.actorOf(Node.props(id), "Node_" + id);
-
-    // Broadcast NodeJoins
-    Node.NodeJoins nodeJoins = new Node.NodeJoins(node, id);
-    for (ActorRef peer: nodes.values()) {
-      peer.tell(nodeJoins, null);
+    
+    // TODO choose bootstrap node?
+    Optional<Integer> firstKey = nodes.keySet().stream().findFirst();
+    if (firstKey.isPresent()) {
+      ActorRef bootPeer = nodes.get(firstKey.get());
+      bootPeer.tell(new Node.GetNodes(id), node);
     }
 
     nodes.put(id, node);

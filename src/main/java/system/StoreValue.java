@@ -2,7 +2,7 @@ package system;
 
 import java.io.Serializable;
 
-public class StoreValue implements Serializable {
+public class StoreValue implements Serializable, Comparable<StoreValue> {
   private int version;
   private String value;
   
@@ -31,5 +31,10 @@ public class StoreValue implements Serializable {
   @Override
   public String toString () {
     return value + (version < 0 ? "" : " (v" + version + ")");
+  }
+
+  @Override 
+  public int compareTo(StoreValue value) {
+    return this.version - value.version;
   }
 }

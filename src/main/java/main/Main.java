@@ -130,6 +130,7 @@ public class Main extends Application {
       system = new KeyValStoreSystem();
       for (int i = 10; i <= 40; i += 10) {
         newNode(i);
+        Thread.sleep(500);
       }
       newClient(null);
     } catch (Exception e) {
