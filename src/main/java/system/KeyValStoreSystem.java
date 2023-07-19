@@ -106,8 +106,7 @@ public class KeyValStoreSystem {
   }
 
   public void nodeLeaves (int id) {
-    ActorRef node = nodes.get(id);
-    node.tell(new Node.NodeLeave(), null);
+    nodes.get(id).tell(new Node.NodeLeave(), null);
     nodes.remove(id);
     removeClient(id);
   }

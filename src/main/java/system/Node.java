@@ -3,7 +3,6 @@ package system;
 import java.io.Serializable;
 import java.text.SimpleDateFormat;
 import java.util.ArrayList;
-import java.util.Arrays;
 import java.util.Collections;
 import java.util.HashMap;
 import java.util.List;
@@ -149,10 +148,9 @@ public class Node extends AbstractActor {
   }
 
   private static class Update implements Serializable {
-    public final int reqId, key;
+    public final int key;
     public final StoreValue value;
-    public Update(int reqId, int key, StoreValue value) {
-      this.reqId = reqId;
+    public Update(int key, StoreValue value) {
       this.key = key;
       this.value = value;
     }
@@ -171,7 +169,12 @@ public class Node extends AbstractActor {
   private void log(String log) {
     String timestamp = new SimpleDateFormat("HH:mm:ss.SS").format(new java.util.Date());
     System.out.println(timestamp + ": [Node_" + idNode + "] " + log);
-    KeyValStoreSystem.logsMap.get(this.idNode).add(log);
+    //KeyValStoreSystem.logsMap.get(this.idNode).add(log);
+  }
+
+  private void updateStoreUI() {
+    //KeyValStoreSystem.storesMap.get(this.idNode).setValue(store.toString());
+    log(store.toString());
   }
 
   void multicast(Serializable m) {
@@ -185,7 +188,7 @@ public class Node extends AbstractActor {
    * @param m
    * @param nodeIds
    */
-  void multicast(Serializable m, int[] nodeIds) {
+  void multicast(Serializable m, Set<Integer> nodeIds) {
     for (Integer id: nodeIds) {
       ActorRef peer = nodes.get(id);
       if (peer != null) {
@@ -196,15 +199,15 @@ public class Node extends AbstractActor {
 
   /**
    * @param key Key of the involved item
-   * @return A sorted array of ids representing the nodes responsible of the item
+   * @return A set of ids representing the nodes responsible of the item
    */
-  private int[] getInvolvedNodes (int key, boolean self) { // TODO test me
-    int i, count = 0;
-    boolean last = true;
-    
+  private Set<Integer> getInvolvedNodes (int key, boolean self) { // TODO test me
     List<Integer> ids = new ArrayList<>(nodes.keySet());
     if (self) { ids.add(idNode); }
     Collections.sort(ids);
+    
+    int i, count = 0;
+    boolean last = true;
     for (i = 0; i < ids.size(); ++i) {
       if (ids.get(i) > key) {
         last = false; break;
@@ -213,9 +216,10 @@ public class Node extends AbstractActor {
     
     if (last) { i--; }
     
-    int[] res = new int[Math.min(ids.size(), N)];
-    while (count < N && count < ids.size()) {
-      res[count++] = ids.get(i);
+    Set<Integer> res = new HashSet<>();
+    while (count < Math.min(ids.size(), N)) {
+      res.add(ids.get(i));
+      count++;
       i = (i + 1) % ids.size();
     }
     
@@ -268,29 +272,30 @@ public class Node extends AbstractActor {
   }
 
   void onGetItems (GetItems msg) {
-    log("Node " + msg.idSender + " requested values");
+    log("Node " + msg.idSender + " requested items");
     getSender().tell(new GetItemsResponse(getItemsByNode(msg.idSender)), getSelf());
   }
 
   void onGetItemsResponse (GetItemsResponse msg) {
     log("Received items from " + getSender().path().name());
 
+    // Update local store from received values
     if (store.size() == 0) { store.putAll(msg.items); }
     else {
       for (Integer key : msg.items.keySet()) {
         StoreValue locValue = store.get(key);
         StoreValue extValue = msg.items.get(key);
+        // Check if the value stored is the last version
         if (locValue == null || locValue.compareTo(extValue) < 0) {
           store.put(key, extValue);
         }
       }
     }
 
-    // Broadcast hello from the new node
+    // Broadcast Hello msg from the new node
     if (++joinGetCount == Math.min(nodes.size(), N)) {
       multicast(new NodeHello(this.idNode)); 
-      // TODO
-      //if(store.size() > 0) System.out.println(KeyValStoreSystem.storesMap.get(this.idNode)); // Update UI
+      if(store.size() > 0) { updateStoreUI(); }
     }
   }
 
@@ -298,41 +303,37 @@ public class Node extends AbstractActor {
     log("Node " + msg.idSender + " joined!");
     nodes.put(msg.idSender, getSender());
 
+    // Remove items that the node is no longer responsible for
     for (Integer key : getItemsByNode(msg.idSender).keySet()) {
-      int[] involvedNodes = getInvolvedNodes(key, true);
-      if (!Arrays.stream(involvedNodes).anyMatch((nId) -> nId == idNode)) {
+      Set<Integer> involvedNodes = getInvolvedNodes(key, true);
+      if (!involvedNodes.stream().anyMatch((nId) -> nId == idNode)) {
         store.remove(key);
       }
     }
-    // TODO
-    //KeyValStoreSystem.storesMap.get(this.idNode).setValue(store.toString()); // Update UI
-  }
-
-  private static Set<Integer> toSet(int... arr) {
-    Set<Integer> set = new HashSet<>();
-    for (int v : arr)
-      set.add(v);
-    return set;
+    updateStoreUI();
   }
 
   void onNodeLeave (NodeLeave msg) {
     log("Requested to leave");
     HashMap<Integer, HashMap<Integer, StoreValue>> toSend = new HashMap<>();
     
+    // For each item in the store get the responsible node to which send the item 
     for (Integer key : store.keySet()) {
-      Set<Integer> invNodesNow   = toSet(getInvolvedNodes(key, true));
-      Set<Integer> invNodesAfter = toSet(getInvolvedNodes(key, false));
+      Set<Integer> invNodesNow   = getInvolvedNodes(key, true);
+      Set<Integer> invNodesAfter = getInvolvedNodes(key, false);
       invNodesAfter.removeAll(invNodesNow);
-
       if (!invNodesAfter.isEmpty()) {
         Integer id = invNodesAfter.iterator().next();
         if (toSend.get(id) == null) { toSend.put(id, new HashMap<>()); }
         toSend.get(id).put(key, store.get(key));
       }
     }
-
-    for (Integer id : toSend.keySet()) {
-      nodes.get(id).tell(new NodeGoodbye(idNode, toSend.get(id)), getSelf());
+    
+    // Send Goodbye msg attaching the items
+    for (Integer id : nodes.keySet()) {
+      HashMap<Integer, StoreValue> items = toSend.get(id);
+      if (items == null) { items = new HashMap<>(); }
+      nodes.get(id).tell(new NodeGoodbye(idNode, items), getSelf());
     }
   }
 
@@ -340,11 +341,11 @@ public class Node extends AbstractActor {
     log("Received items from leaving Node " + msg.idSender);
     store.putAll(msg.items);
     nodes.remove(msg.idSender);
-    //KeyValStoreSystem.storesMap.get(this.idNode).setValue(store.toString()); // Update UI
+    updateStoreUI();
   }
 
   void onGet (Get getRequest) {
-    log("Get(" + getRequest.key + ") from " + getSender().path().name());
+    log("GET(" + getRequest.key + ") from " + getSender().path().name());
     StoreValue value = store.get(getRequest.key); // Try to get value from the store
     
     // Send value to the sender
@@ -355,21 +356,21 @@ public class Node extends AbstractActor {
   }
 
   void onUpdate (Update updateRequest) {
-    log(updateRequest.reqId + "Update(" + updateRequest.key + ", " + updateRequest.value + ") from " + getSender().path().name());
+    log("UPDATE(" + updateRequest.key + ", " + updateRequest.value + ") from " + getSender().path().name());
     store.put(updateRequest.key, updateRequest.value); // Update value in the store
-    KeyValStoreSystem.storesMap.get(this.idNode).setValue(store.toString()); // Update UI
+    updateStoreUI();
   }  
 
   void onCoordinatorGet (CoordinatorGet getRequest) {
-    log("Coordinating: get(" + getRequest.key + ") ");
+    log("Coordinating: GET(" + getRequest.key + ") ");
 
     // Create a pending GET Request
     int reqId = reqCount++;
-    int[] involvedNodes = getInvolvedNodes(getRequest.key, true);
+    Set<Integer> involvedNodes = getInvolvedNodes(getRequest.key, true);
     PendingRequest.Request<StoreValue> req = new PendingRequest.Get<>(reqId, getSender(), new PendingRequest.Quorum<StoreValue>(R));
     
     // Check if the coordinator node should have the value
-    if (Arrays.stream(involvedNodes).anyMatch((nId) -> nId == idNode)) {
+    if (involvedNodes.stream().anyMatch((nId) -> nId == idNode)) {
       StoreValue value = store.get(getRequest.key);
       req.quorum.inc(value == null ? new StoreValue(null, -1) : value); // Increment the quorum
     }
@@ -380,11 +381,11 @@ public class Node extends AbstractActor {
   }
 
   void onCoordinatorUpdate (CoordinatorUpdate updateRequest) {
-    log("Coordinating: update(" + updateRequest.key + ", " + updateRequest.value + ")");
+    log("Coordinating: UPDATE(" + updateRequest.key + ", " + updateRequest.value + ")");
 
     // Create a pending UPDATE Request
     int reqId = reqCount++;
-    int[] involvedNodes = getInvolvedNodes(updateRequest.key, true);
+    Set<Integer> involvedNodes = getInvolvedNodes(updateRequest.key, true);
     PendingRequest.Update<StoreValue> req = new PendingRequest.Update<>(reqId, getSender(), new PendingRequest.Quorum<StoreValue>(W), updateRequest.key, updateRequest.value);
     req.setInvolvedNodes(involvedNodes, this.idNode);
     
@@ -434,8 +435,8 @@ public class Node extends AbstractActor {
       PendingRequest.Update<StoreValue> updateReq = (PendingRequest.Update<StoreValue>) req; // Cast the request to update type
       StoreValue newValue = new StoreValue(updateReq.value, freshValue.getVersion() + 1); // Create new value
       if (updateReq.updateLocal) { store.put(updateReq.key, newValue); } // Update local value if required
-      multicast(new Update(updateReq.reqId, updateReq.key, newValue), updateReq.involvedNodes); // Send messages
-      KeyValStoreSystem.storesMap.get(this.idNode).setValue(store.toString()); // Update UI
+      multicast(new Update(updateReq.key, newValue), updateReq.involvedNodes); // Send messages
+      updateStoreUI();
     }
   }
 

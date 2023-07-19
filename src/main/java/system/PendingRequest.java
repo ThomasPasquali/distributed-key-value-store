@@ -1,8 +1,9 @@
 package system;
 
 import java.util.ArrayList;
-import java.util.Arrays;
+import java.util.HashSet;
 import java.util.List;
+import java.util.Set;
 
 import akka.actor.ActorRef;
 
@@ -50,10 +51,10 @@ public class PendingRequest {
   }
 
   public static class Update<T> extends Request<T> {
-    int[] involvedNodes;
     boolean updateLocal;
     int key; 
     String value;
+    Set<Integer> involvedNodes;
     
     public Update (int reqId, ActorRef client, Quorum<T> quorum, int key, String value) {
       super(reqId, client, quorum);
@@ -62,9 +63,9 @@ public class PendingRequest {
       this.value = value;
     }
 
-    public void setInvolvedNodes(int[] nodes, int idNode) {
-      this.involvedNodes = nodes;
-      this.updateLocal = Arrays.stream(this.involvedNodes).anyMatch((nId) -> nId == idNode);
+    public void setInvolvedNodes(Set<Integer> nodes, int idNode) {
+      this.involvedNodes = new HashSet<>(nodes);
+      this.updateLocal = this.involvedNodes.stream().anyMatch((nId) -> nId == idNode);
     }
   }
 }
