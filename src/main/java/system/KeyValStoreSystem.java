@@ -96,7 +96,7 @@ public class KeyValStoreSystem {
     Optional<Integer> firstKey = nodes.keySet().stream().findFirst();
     if (firstKey.isPresent()) {
       ActorRef bootPeer = nodes.get(firstKey.get());
-      bootPeer.tell(new Node.GetNodes(id), node);
+      node.tell(new Node.NodeJoin(bootPeer), null);
     }
 
     nodes.put(id, node);
@@ -106,11 +106,8 @@ public class KeyValStoreSystem {
   }
 
   public void nodeLeaves (int id) {
-    Node.NodeLeaves nodeLeaves = new Node.NodeLeaves(id);
     ActorRef node = nodes.get(id);
-    for (ActorRef peer: nodes.values()) {
-      peer.tell(nodeLeaves, node);
-    }
+    node.tell(new Node.NodeLeave(), null);
     nodes.remove(id);
     removeClient(id);
   }

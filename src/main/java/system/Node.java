@@ -5,9 +5,11 @@ import java.text.SimpleDateFormat;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Collections;
-import java.util.Formatter;
 import java.util.HashMap;
 import java.util.List;
+import java.util.Set;
+import java.util.HashSet;
+import java.util.Formatter;
 import java.util.StringJoiner;
 
 import akka.actor.AbstractActor;
@@ -35,7 +37,7 @@ public class Node extends AbstractActor {
       for (Integer k : store.keySet()) {
         StoreValue v = store.get(k);
         Formatter fmt = new Formatter();
-        sj.add(fmt.format("%-3d -> %-15s (v%d)", k, v.getValue(), v.getVersion()).toString());
+        sj.add(fmt.format("%-3d -> %s", k, v.toString()).toString());
         fmt.flush();
         fmt.close();
       }
@@ -43,71 +45,18 @@ public class Node extends AbstractActor {
     }
   }; 
 
-  /* -------------------------------------- STATIC MESSAGE TYPES ---------------------------------------- */
+  /* -------------------------------------- PUBLIC MESSAGE INTERFACE (CLIENT-NODE) ---------------------------------------- */
 
-  public static enum STATUS { OK,  ERROR  };
+  public static enum STATUS { OK,  ERROR };
 
-  public static class NodeHello implements Serializable {
-    public final int idSender;
-    public NodeHello(int idSender) {
-      this.idSender = idSender;
+  public static class NodeJoin implements Serializable {
+    public final ActorRef bootNode;
+    public NodeJoin(ActorRef bootNode) {
+      this.bootNode = bootNode;
     }
   }
-
-  public static class NodeLeaves implements Serializable {
-    public final int id;
-    public NodeLeaves(int id) {
-      this.id = id;
-    }
-  }
-
-  public static class GetNodes implements Serializable {
-    public final int idNew;
-    public GetNodes(int idNew) {
-      this.idNew = idNew;
-    }
-  }
-
-  public static class GetNodesResponse implements Serializable {
-    public final int idSender;
-    public final HashMap<Integer, ActorRef> nodes;
-    public GetNodesResponse(int idSender, HashMap<Integer, ActorRef> nodes) {
-      this.idSender = idSender;
-      this.nodes = new HashMap<>(nodes);
-    }
-  }
-
-  public static class GetItems implements Serializable {
-    public final int idSender;
-    public GetItems(int idSender) {
-      this.idSender = idSender;
-    }
-  }
-
-  public static class GetItemsResponse implements Serializable {
-    public final HashMap<Integer, StoreValue> items;
-    public GetItemsResponse(HashMap<Integer, StoreValue> items) {
-      this.items = new HashMap<>(items);
-    }
-  }
-
-  public static class Get implements Serializable {
-    public final int reqId, key;
-    public Get(int reqId, int key) {
-      this.reqId = reqId;
-      this.key = key;
-    }
-  }
-
-  public static class Update implements Serializable {
-    public final int reqId, key;
-    public final StoreValue value;
-    public Update(int reqId, int key, StoreValue value) {
-      this.reqId = reqId;
-      this.key = key;
-      this.value = value;
-    }
-  }
+  
+  public static class NodeLeave implements Serializable {}
 
   public static class CoordinatorGet implements Serializable { 
     public final int key;
@@ -125,17 +74,6 @@ public class Node extends AbstractActor {
     }
   }
 
-  public static class GetResponse implements Serializable {
-    public final int reqId;
-    public final StoreValue value;
-    public final STATUS status;
-    public GetResponse(int reqId, StoreValue value, STATUS status) {
-      this.reqId = reqId;
-      this.value = value;
-      this.status = status;
-    }
-  }
-
   public static class Feedback implements Serializable {
     public final String feedback;
     public Feedback(int reqId, StoreValue value, STATUS status, ACT act) {
@@ -144,6 +82,81 @@ public class Node extends AbstractActor {
       this.feedback = str;
     }
   }
+
+  /* -------------------------------------- PRIVATE MESSAGE INTERFACE (NODE-NODE) ---------------------------------------- */
+  
+  private static class NodeHello implements Serializable {
+    public final int idSender;
+    public NodeHello(int idSender) {
+      this.idSender = idSender;
+    }
+  }
+  
+  private static class NodeGoodbye implements Serializable {
+    public final int idSender;
+    public final HashMap<Integer, StoreValue> items;
+    public NodeGoodbye(int idSender, HashMap<Integer, StoreValue> items) {
+      this.idSender = idSender;
+      this.items = new HashMap<>(items);
+    }
+  }
+
+  private static class GetNodes implements Serializable {
+    public final int idNew;
+    public GetNodes(int idNew) {
+      this.idNew = idNew;
+    }
+  }
+
+  private static class GetNodesResponse implements Serializable {
+    public final int idSender;
+    public final HashMap<Integer, ActorRef> nodes;
+    public GetNodesResponse(int idSender, HashMap<Integer, ActorRef> nodes) {
+      this.idSender = idSender;
+      this.nodes = new HashMap<>(nodes);
+    }
+  }
+
+  private static class GetItems implements Serializable {
+    public final int idSender;
+    public GetItems(int idSender) {
+      this.idSender = idSender;
+    }
+  }
+
+  private static class GetItemsResponse implements Serializable {
+    public final HashMap<Integer, StoreValue> items;
+    public GetItemsResponse(HashMap<Integer, StoreValue> items) {
+      this.items = new HashMap<>(items);
+    }
+  }
+
+  private static class Get implements Serializable {
+    public final int reqId, key;
+    public Get(int reqId, int key) {
+      this.reqId = reqId;
+      this.key = key;
+    }
+  }
+
+  private static class GetResponse implements Serializable {
+    public final int reqId;
+    public final StoreValue value;
+    public GetResponse(int reqId, StoreValue value) {
+      this.reqId = reqId;
+      this.value = value;
+    }
+  }
+
+  private static class Update implements Serializable {
+    public final int reqId, key;
+    public final StoreValue value;
+    public Update(int reqId, int key, StoreValue value) {
+      this.reqId = reqId;
+      this.key = key;
+      this.value = value;
+    }
+  }  
 
   /* -------------------------------------- CLASS ---------------------------------------- */
 
@@ -238,6 +251,10 @@ public class Node extends AbstractActor {
 
   /* -------------------------------------- MESSAGE HANDLERS ---------------------------------------- */
 
+  void onNodeJoin (NodeJoin msg) { 
+    msg.bootNode.tell(new Node.GetNodes(idNode), getSelf());
+  }
+  
   void onGetNodes (GetNodes msg) {
     log("Node " + msg.idNew + " requested to join");
     getSender().tell(new GetNodesResponse(idNode, nodes), getSelf());
@@ -245,7 +262,7 @@ public class Node extends AbstractActor {
   
   void onGetNodesResponse (GetNodesResponse msg) {
     log("Received list of nodes from " + getSender().path().name());
-    nodes = new HashMap<>(msg.nodes);
+    nodes.putAll(msg.nodes);
     nodes.put(msg.idSender, getSender());
     multicast(new GetItems(idNode), getInvolvedNodes(idNode, false));    
   }
@@ -258,7 +275,7 @@ public class Node extends AbstractActor {
   void onGetItemsResponse (GetItemsResponse msg) {
     log("Received items from " + getSender().path().name());
 
-    if (store.size() == 0) { store = new HashMap<>(msg.items); }
+    if (store.size() == 0) { store.putAll(msg.items); }
     else {
       for (Integer key : msg.items.keySet()) {
         StoreValue locValue = store.get(key);
@@ -272,7 +289,6 @@ public class Node extends AbstractActor {
     // Broadcast hello from the new node
     if (++joinGetCount == Math.min(nodes.size(), N)) {
       multicast(new NodeHello(this.idNode)); 
-      log(store.toString());
       // TODO
       //if(store.size() > 0) System.out.println(KeyValStoreSystem.storesMap.get(this.idNode)); // Update UI
     }
@@ -288,14 +304,43 @@ public class Node extends AbstractActor {
         store.remove(key);
       }
     }
-    log(store.toString());
     // TODO
     //KeyValStoreSystem.storesMap.get(this.idNode).setValue(store.toString()); // Update UI
   }
 
-  void onNodeLeaves (NodeLeaves nodeLeaves) {
-    nodes.remove(nodeLeaves.id);
-    log("Node " + nodeLeaves.id + " left!");
+  private static Set<Integer> toSet(int... arr) {
+    Set<Integer> set = new HashSet<>();
+    for (int v : arr)
+      set.add(v);
+    return set;
+  }
+
+  void onNodeLeave (NodeLeave msg) {
+    log("Requested to leave");
+    HashMap<Integer, HashMap<Integer, StoreValue>> toSend = new HashMap<>();
+    
+    for (Integer key : store.keySet()) {
+      Set<Integer> invNodesNow   = toSet(getInvolvedNodes(key, true));
+      Set<Integer> invNodesAfter = toSet(getInvolvedNodes(key, false));
+      invNodesAfter.removeAll(invNodesNow);
+
+      if (!invNodesAfter.isEmpty()) {
+        Integer id = invNodesAfter.iterator().next();
+        if (toSend.get(id) == null) { toSend.put(id, new HashMap<>()); }
+        toSend.get(id).put(key, store.get(key));
+      }
+    }
+
+    for (Integer id : toSend.keySet()) {
+      nodes.get(id).tell(new NodeGoodbye(idNode, toSend.get(id)), getSelf());
+    }
+  }
+
+  void onNodeGoodbye (NodeGoodbye msg) {
+    log("Received items from leaving Node " + msg.idSender);
+    store.putAll(msg.items);
+    nodes.remove(msg.idSender);
+    //KeyValStoreSystem.storesMap.get(this.idNode).setValue(store.toString()); // Update UI
   }
 
   void onGet (Get getRequest) {
@@ -305,12 +350,12 @@ public class Node extends AbstractActor {
     // Send value to the sender
     ActorRef peer = getSender(), self = getSelf();
     Utils.setTimeout(() -> { // Add artificial delay
-      peer.tell(new GetResponse(getRequest.reqId, value == null ? new StoreValue(null, -1) : value, STATUS.OK), self);
+      peer.tell(new GetResponse(getRequest.reqId, value == null ? new StoreValue(null, -1) : value), self);
     }, KeyValStoreSystem.delaysMap.get(idNode).get());
   }
 
   void onUpdate (Update updateRequest) {
-    log("Update(" + updateRequest.key + ", " + updateRequest.value + ") from " + getSender().path().name());
+    log(updateRequest.reqId + "Update(" + updateRequest.key + ", " + updateRequest.value + ") from " + getSender().path().name());
     store.put(updateRequest.key, updateRequest.value); // Update value in the store
     KeyValStoreSystem.storesMap.get(this.idNode).setValue(store.toString()); // Update UI
   }  
@@ -397,17 +442,19 @@ public class Node extends AbstractActor {
   @Override
   public Receive createReceive() {
     return receiveBuilder()
+      .match(NodeJoin.class, this::onNodeJoin)
+      .match(NodeLeave.class, this::onNodeLeave)
+      .match(CoordinatorGet.class, this::onCoordinatorGet)
+      .match(CoordinatorUpdate.class, this::onCoordinatorUpdate)
+      .match(NodeHello.class, this::onNodeHello)
+      .match(NodeGoodbye.class, this::onNodeGoodbye)
       .match(GetNodes.class, this::onGetNodes)
       .match(GetNodesResponse.class, this::onGetNodesResponse)
       .match(GetItems.class, this::onGetItems)
       .match(GetItemsResponse.class, this::onGetItemsResponse)
-      .match(NodeHello.class, this::onNodeHello)
-      .match(NodeLeaves.class, this::onNodeLeaves)
       .match(Get.class, this::onGet)
-      .match(Update.class, this::onUpdate)      
-      .match(CoordinatorGet.class, this::onCoordinatorGet)
-      .match(CoordinatorUpdate.class, this::onCoordinatorUpdate)
       .match(GetResponse.class, this::onGetResponse)
+      .match(Update.class, this::onUpdate)      
       .build();
   }
 
