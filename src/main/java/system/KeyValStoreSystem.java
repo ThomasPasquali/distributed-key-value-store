@@ -120,4 +120,19 @@ public class KeyValStoreSystem {
   public void update (ActorRef clientActor, int coordinatorId, int key, String value) {
     nodes.get(coordinatorId).tell(new Node.Update(key, value), clientActor);
   }
+
+  public void crashNode (int nodeId) {
+    nodes.get(nodeId).tell(new Node.Crash(), null);
+  }
+
+  public void recoverNode (int nodeId) {
+    ActorRef recoveryNode = null;
+    for (Integer id : nodes.keySet()) {
+      if (id != nodeId) {
+        recoveryNode = nodes.get(id);
+        break;
+      }
+    }
+    nodes.get(nodeId).tell(new Node.Recovery(recoveryNode), null); // recoveryNode may be null...
+  }
 }

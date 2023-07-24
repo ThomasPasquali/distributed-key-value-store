@@ -28,6 +28,9 @@ public class Main extends Application {
 
   static int clientCount = 0;
   private KeyValStoreSystem system;
+  protected KeyValStoreSystem getSystem() {
+    return system;
+  }
 
   private void showErrorDialog (String error) {
     (new Alert(AlertType.ERROR, error, ButtonType.OK)).showAndWait();
@@ -50,7 +53,7 @@ public class Main extends Application {
     }
   }
 
-  void newNode (int nodeId) throws Exception {
+  protected void newNode (int nodeId) throws Exception {
     SimpleStringProperty nodeLogsString = new SimpleStringProperty();
     SimpleStringProperty nodeStoreString = new SimpleStringProperty();
     SimpleIntegerProperty nodeResponseDelay = new SimpleIntegerProperty(0);
@@ -60,8 +63,9 @@ public class Main extends Application {
     logsTa.setEditable(false);
     logsTa.textProperty().bind(nodeLogsString);
     logsTa.textProperty().addListener((v, o, n) -> { // FIXME scroll to bottom
-      logsTa.setScrollTop(Double.MAX_VALUE);
-      logsTa.appendText("");
+      // logsTa.selectPositionCaret(logsTa.getLength());
+      // logsTa.setScrollTop(Double.MAX_VALUE);
+      // logsTa.appendText("");
     });
 
     TextArea storeTa = new TextArea();
@@ -93,6 +97,10 @@ public class Main extends Application {
     newNodeIdField.clear();
   }
 
+  protected void newClient () {
+    newClient(null);
+  }
+  
   @FXML
   void newClient(ActionEvent event) {
     try {
@@ -128,11 +136,11 @@ public class Main extends Application {
       stage.show();
 
       system = new KeyValStoreSystem();
-      for (int i = 10; i <= 40; i += 10) {
+      /* for (int i = 10; i <= 40; i += 10) {
         newNode(i);
         Thread.sleep(500);
       }
-      newClient(null);
+      newClient(null); */
     } catch (Exception e) {
       e.printStackTrace();
     }

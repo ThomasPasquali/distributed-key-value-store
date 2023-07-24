@@ -160,6 +160,9 @@ public class Node extends AbstractActor {
     this.store = new HashMap<>() {
       @Override
       public String toString () {
+        if (store.isEmpty()) {
+          return "Empty store!!";
+        }
         StringJoiner sj = new StringJoiner("\n");
         for (Integer k : store.keySet()) {
           StoreValue v = store.get(k);
@@ -177,15 +180,20 @@ public class Node extends AbstractActor {
     return Props.create(Node.class, () -> new Node(id, bootNode));
   }
 
-  private void log(String log) {
+  private void log(String log, boolean ignoreUI) {
     String timestamp = new SimpleDateFormat("HH:mm:ss.SS").format(new java.util.Date());
     System.out.println(timestamp + ": [Node_" + idNode + "] " + log);
-    //KeyValStoreSystem.logsMap.get(this.idNode).add(log);
+    if (!ignoreUI) {
+      KeyValStoreSystem.logsMap.get(this.idNode).add(log);
+    }
+  }
+  private void log(String log) {
+    log(log, false);
   }
 
   private void updateStoreUI() {
-    //KeyValStoreSystem.storesMap.get(this.idNode).setValue(store.toString());
-    log(store.toString());
+    KeyValStoreSystem.storesMap.get(this.idNode).setValue(store.toString());
+    log("\n" + store.toString(), true);
   }
 
   void multicast(Serializable m) {
@@ -510,6 +518,7 @@ public class Node extends AbstractActor {
   void onCrash(Crash msg) {
     getContext().become(crashed());
     log("Crashed!");
+    KeyValStoreSystem.storesMap.get(this.idNode).setValue("CRASHED!");
   }
 
   void onRecovery(Recovery msg) {
