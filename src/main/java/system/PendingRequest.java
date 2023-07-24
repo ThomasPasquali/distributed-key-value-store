@@ -9,7 +9,7 @@ import akka.actor.ActorRef;
 
 public class PendingRequest {
 
-  public static enum ACT { GET, UPDATE };
+  public static enum ACT { GET, UPDATE, JOIN };
   
   public static class Quorum<T> {
     private int quorumThreshold;
@@ -66,6 +66,13 @@ public class PendingRequest {
     public void setInvolvedNodes(Set<Integer> nodes, int idNode) {
       this.involvedNodes = new HashSet<>(nodes);
       this.updateLocal = this.involvedNodes.stream().anyMatch((nId) -> nId == idNode);
+    }
+  }
+
+  public static class Join<T> extends Request<T> {
+    public Join (int reqId, Quorum<T> quorum) {
+      super(reqId, null, quorum);
+      this.act = ACT.JOIN;
     }
   }
 }

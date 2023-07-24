@@ -87,17 +87,17 @@ public class KeyValStoreSystem {
 
     // Binding node stores to TextArea
     storesMap.put(id, storeProp);
-    delaysMap.put(id, delayProp);
-
-    // Creating Actor (Node)
-    ActorRef node = system.actorOf(Node.props(id), "Node_" + id);
+    delaysMap.put(id, delayProp);    
     
     // TODO choose bootstrap node?
+    ActorRef bootPeer = null;
     Optional<Integer> firstKey = nodes.keySet().stream().findFirst();
     if (firstKey.isPresent()) {
-      ActorRef bootPeer = nodes.get(firstKey.get());
-      node.tell(new Node.NodeJoin(bootPeer), null);
+      bootPeer = nodes.get(firstKey.get());
     }
+
+    // Creating Actor (Node)
+    ActorRef node = system.actorOf(Node.props(id, bootPeer), "Node_" + id);
 
     nodes.put(id, node);
     for (ClientController c : clientControllers.values()) {
@@ -106,16 +106,18 @@ public class KeyValStoreSystem {
   }
 
   public void nodeLeaves (int id) {
-    nodes.get(id).tell(new Node.NodeLeave(), null);
+    ActorRef leavingNode = nodes.get(id);
+    leavingNode.tell(new Node.NodeLeave(), ActorRef.noSender());
+    system.stop(leavingNode);
     nodes.remove(id);
     removeClient(id);
   }
 
   public void get (ActorRef clientActor, int coordinatorId, int key) {
-    nodes.get(coordinatorId).tell(new Node.CoordinatorGet(key), clientActor);
+    nodes.get(coordinatorId).tell(new Node.Get(key), clientActor);
   }
   
   public void update (ActorRef clientActor, int coordinatorId, int key, String value) {
-    nodes.get(coordinatorId).tell(new Node.CoordinatorUpdate(key, value), clientActor);
+    nodes.get(coordinatorId).tell(new Node.Update(key, value), clientActor);
   }
 }
