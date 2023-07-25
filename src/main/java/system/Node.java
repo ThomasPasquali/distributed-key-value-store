@@ -20,7 +20,7 @@ import system.PendingRequest.ACT;
 
 public class Node extends AbstractActor {
 
-  public static final int T = 1000;
+  public static final int T = 2000;
   public static final int N = 3;
   public static final int R = 2;
   public static final int W = 2;
@@ -158,6 +158,18 @@ public class Node extends AbstractActor {
     this.pendingRequests = new HashMap<>();
     this.nodes = new HashMap<>();
     this.store = new HashMap<>() {
+      @Override
+      public StoreValue put (Integer key, StoreValue value) {
+        StoreValue res = super.put(key, value);
+        updateStoreUI();
+        return res;
+      }
+      @Override
+      public StoreValue remove (Object key) {
+        StoreValue res = super.remove(key);
+        updateStoreUI();
+        return res;
+      }
       @Override
       public String toString () {
         if (store.isEmpty()) {
@@ -370,8 +382,8 @@ public class Node extends AbstractActor {
       }
       
       pendingRequests.remove(joinCount++);
-      if(store.size() > 0) { updateStoreUI(); }
     }
+    updateStoreUI();
   }
 
   void onNodeHello (NodeHello msg) {

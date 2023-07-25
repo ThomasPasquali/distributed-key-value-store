@@ -4,6 +4,7 @@ import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Optional;
+import java.util.Set;
 
 import akka.actor.AbstractActor;
 import akka.actor.ActorRef;
@@ -26,6 +27,10 @@ public class KeyValStoreSystem {
 
   public KeyValStoreSystem () {
     system = ActorSystem.create("distr-key-val-system");
+  }
+
+  public Set<Integer> getCurrentNodeIds () {
+    return nodes.keySet();
   }
 
   public class ClientActor extends AbstractActor {

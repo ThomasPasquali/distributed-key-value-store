@@ -1,9 +1,12 @@
 package main;
 
 import java.io.IOException;
+import java.util.Arrays;
+import java.util.TreeSet;
 
 import client.ClientController;
 import javafx.application.Application;
+import javafx.application.Platform;
 import javafx.beans.property.SimpleIntegerProperty;
 import javafx.beans.property.SimpleStringProperty;
 import javafx.event.ActionEvent;
@@ -36,6 +39,8 @@ public class Main extends Application {
     (new Alert(AlertType.ERROR, error, ButtonType.OK)).showAndWait();
   }
 
+  protected Stage mainStage;
+
   @FXML
   private TextField newNodeIdField;
 
@@ -51,6 +56,16 @@ public class Main extends Application {
     } catch (Exception e) {
       showErrorDialog(e.getMessage());
     }
+  }
+  
+  protected void nodeLeaves (int nodeId) {
+    system.nodeLeaves(nodeId);
+    int i = 0;
+    for (Integer id : new TreeSet<>(getSystem().getCurrentNodeIds())) {
+      if (id > nodeId) break;
+      ++i;
+    }
+    nodesPane.getChildren().remove(i);
   }
 
   protected void newNode (int nodeId) throws Exception {
@@ -93,7 +108,16 @@ public class Main extends Application {
     delayHBox.setAlignment(Pos.CENTER);
 
     headHbox.getChildren().addAll(b, delayHBox);
-    nodesPane.getChildren().add(vbox);
+    int newNodeI = -1;
+    for (Integer id : new TreeSet<>(getSystem().getCurrentNodeIds())) {
+      if (id > nodeId) break;
+      ++newNodeI;
+    }
+    if (newNodeI < 0 || newNodeI >= nodesPane.getChildren().size()) {
+      nodesPane.getChildren().add(vbox);
+    } else {
+      nodesPane.getChildren().add(newNodeI, vbox);
+    }
     newNodeIdField.clear();
   }
 
@@ -113,7 +137,7 @@ public class Main extends Application {
       stage.setResizable(false);
       stage.setScene(new Scene((SplitPane) fxmlLoader.load()));
       stage.setX(1100);
-      stage.setY(100);
+      stage.setY(50);
       stage.show();
 
       system.addClient(clientId, clientController);
@@ -128,11 +152,13 @@ public class Main extends Application {
     try {
       FXMLLoader fxmlLoader = new FXMLLoader(ClassLoader.getSystemClassLoader().getResource("main.fxml"));
       fxmlLoader.setController(this);
+      mainStage = stage;
       stage.setTitle("Distributed key value store");
       stage.setResizable(false);
       stage.setScene(new Scene((VBox) fxmlLoader.load()));
-      stage.setX(50);
-      stage.setY(100);
+      stage.setOnCloseRequest((e) -> { Platform.exit(); System.exit(0); });
+      stage.setX(100);
+      stage.setY(30);
       stage.show();
 
       system = new KeyValStoreSystem();
