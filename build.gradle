@@ -34,7 +34,8 @@ compileJava {
     options.compilerArgs += ["-Xlint:deprecation"]
 }
 
-mainClassName = "main.Main"
+// mainClassName = "main.Main"
+mainClassName = "tests.CrashRecovery"
 
 sourceSets {
     main {
