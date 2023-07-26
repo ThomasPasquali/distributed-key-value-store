@@ -50,7 +50,7 @@ public class Main extends Application {
   @FXML
   void newNode(ActionEvent event) {
     try {
-      newNode(Integer.parseInt(newNodeIdField.getText()));
+      newNode(Integer.parseInt(newNodeIdField.getText()), -1);
     } catch (NumberFormatException e) {
       showErrorDialog("Please provide a non negative, unique ID");
     } catch (Exception e) {
@@ -68,11 +68,11 @@ public class Main extends Application {
     nodesPane.getChildren().remove(i);
   }
 
-  protected void newNode (int nodeId) throws Exception {
+  protected void newNode (int nodeId, int bootNodeId) throws Exception {
     SimpleStringProperty nodeLogsString = new SimpleStringProperty();
     SimpleStringProperty nodeStoreString = new SimpleStringProperty();
     SimpleIntegerProperty nodeResponseDelay = new SimpleIntegerProperty(0);
-    system.createNode(nodeId, nodeLogsString, nodeStoreString, nodeResponseDelay);
+    system.createNode(nodeId, bootNodeId, nodeLogsString, nodeStoreString, nodeResponseDelay);
 
     TextArea logsTa = new TextArea();
     logsTa.setEditable(false);

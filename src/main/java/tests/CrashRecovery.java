@@ -41,7 +41,7 @@ public class CrashRecovery extends Main {
       // Create nodes
       int[] nodeIds = {10, 20, 30, 40};
       for (int id : nodeIds) {
-        newNode(id);
+        newNode(id, 10);
         Thread.sleep(200);
       }
 
@@ -79,7 +79,7 @@ public class CrashRecovery extends Main {
           break;
 
         case 1: // Node 25 joins
-          try { newNode(25); } catch (Exception e1) { e1.printStackTrace(); }
+          try { newNode(25, 20); } catch (Exception e1) { e1.printStackTrace(); }
           break;
 
         case 2: // Update a key "owned" by node 20
@@ -87,7 +87,7 @@ public class CrashRecovery extends Main {
           break;
 
         case 3: // Node 20 recovers
-          getSystem().recoverNode(20);
+          try { getSystem().recoverNode(20, -1); } catch (Exception e1) { e1.printStackTrace(); }
           break;
 
         case 4: // Node 20 crashes (again)
@@ -95,7 +95,7 @@ public class CrashRecovery extends Main {
           break;
 
         case 5: // Node 5 joins
-          try { newNode(5); } catch (Exception e1) { e1.printStackTrace(); }
+          try { newNode(5, 10); } catch (Exception e1) { e1.printStackTrace(); }
           break;
 
         case 6: // Node 10 leaves
@@ -103,7 +103,7 @@ public class CrashRecovery extends Main {
           break;
 
         case 7: // Node 20 recovers
-          getSystem().recoverNode(20);
+          try { getSystem().recoverNode(20, -1); } catch (Exception e1) { e1.printStackTrace(); }
           break;
 
         default: 

@@ -2,8 +2,9 @@ package system;
 
 import java.util.ArrayList;
 import java.util.HashMap;
+import java.util.HashSet;
 import java.util.List;
-import java.util.Optional;
+import java.util.Map;
 import java.util.Set;
 
 import akka.actor.AbstractActor;
@@ -17,16 +18,20 @@ import javafx.collections.ObservableList;
 
 public class KeyValStoreSystem {
 
-  public static final HashMap<Integer, List<String>> logsMap = new HashMap<>();
-  public static final HashMap<Integer, SimpleStringProperty> storesMap = new HashMap<>();
-  public static final HashMap<Integer, SimpleIntegerProperty> delaysMap = new HashMap<>();
+  public static final Map<Integer, List<String>> logsMap = new HashMap<>();
+  public static final Map<Integer, SimpleStringProperty> storesMap = new HashMap<>();
+  public static final Map<Integer, SimpleIntegerProperty> delaysMap = new HashMap<>();
 
   private final ActorSystem system;
-  private final HashMap<Integer, ActorRef> nodes = new HashMap<>();
-  private final HashMap<Integer,ClientController> clientControllers = new HashMap<>();
+  private final Set<Integer> crashed;
+  private final Map<Integer, ActorRef> nodes;
+  private final Map<Integer,ClientController> clientControllers;
 
   public KeyValStoreSystem () {
     system = ActorSystem.create("distr-key-val-system");
+    crashed = new HashSet<>();
+    nodes = new HashMap<>();
+    clientControllers = new HashMap<>();
   }
 
   public Set<Integer> getCurrentNodeIds () {
@@ -69,7 +74,7 @@ public class KeyValStoreSystem {
     }
   }
 
-  public void createNode (int id, SimpleStringProperty logsProp, SimpleStringProperty storeProp, SimpleIntegerProperty delayProp) throws Exception {
+  public void createNode (int id, int idBootNode, SimpleStringProperty logsProp, SimpleStringProperty storeProp, SimpleIntegerProperty delayProp) throws Exception {
     // Check id
     if (id < 0) {
       throw new Exception("ID must be greater than zero");
@@ -94,15 +99,20 @@ public class KeyValStoreSystem {
     storesMap.put(id, storeProp);
     delaysMap.put(id, delayProp);    
     
-    // TODO choose bootstrap node?
-    ActorRef bootPeer = null;
-    Optional<Integer> firstKey = nodes.keySet().stream().findFirst();
-    if (firstKey.isPresent()) {
-      bootPeer = nodes.get(firstKey.get());
+    // Select boot node; if the id is not valid (crashed or absent) take the first node valid in the list
+    ActorRef bootNode = nodes.get(idBootNode);
+    if (!nodes.isEmpty() && (bootNode == null || crashed.contains(idBootNode))) {
+      for (Integer node : nodes.keySet()) {
+        if (!crashed.contains(node)) {
+          bootNode = nodes.get(node);
+          break;
+        }
+      }
+      if (bootNode == null) { throw new Exception("Node "+ id +" cannot join the system"); }
     }
 
     // Creating Actor (Node)
-    ActorRef node = system.actorOf(Node.props(id, bootPeer), "Node_" + id);
+    ActorRef node = system.actorOf(Node.props(id, bootNode), "Node_" + id);
 
     nodes.put(id, node);
     for (ClientController c : clientControllers.values()) {
@@ -128,16 +138,23 @@ public class KeyValStoreSystem {
 
   public void crashNode (int nodeId) {
     nodes.get(nodeId).tell(new Node.Crash(), null);
+    crashed.add(nodeId);
   }
 
-  public void recoverNode (int nodeId) {
-    ActorRef recoveryNode = null;
-    for (Integer id : nodes.keySet()) {
-      if (id != nodeId) {
-        recoveryNode = nodes.get(id);
-        break;
+  public void recoverNode (int nodeId, int idRecoveryNode) throws Exception {
+    // Select recovery node; if the id is not valid (crashed or absent) take the first node valid in the list
+    ActorRef recoveryNode = nodes.get(idRecoveryNode);
+    if (!nodes.isEmpty() && (recoveryNode == null || crashed.contains(idRecoveryNode))) {
+      for (Integer id : nodes.keySet()) {
+        if (id != nodeId && !crashed.contains(id)) {
+          recoveryNode = nodes.get(id);
+          break;
+        }
       }
+      if (recoveryNode == null) { throw new Exception("Node " + nodeId +" cannot recover"); }
     }
-    nodes.get(nodeId).tell(new Node.Recovery(recoveryNode), null); // recoveryNode may be null...
+    
+    nodes.get(nodeId).tell(new Node.Recovery(recoveryNode), null);
+    crashed.remove(nodeId);
   }
 }

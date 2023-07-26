@@ -16,6 +16,8 @@ import akka.actor.AbstractActor;
 import akka.actor.ActorRef;
 import akka.actor.Props;
 
+import javafx.application.Platform;
+
 import system.PendingRequest.ACT;
 
 public class Node extends AbstractActor {
@@ -26,7 +28,7 @@ public class Node extends AbstractActor {
   public static final int W = 2;
   
   private int reqCount, joinCount;
-  private boolean recovering;
+  private boolean crashed, recovering;
   private Map<Integer, PendingRequest.Request<StoreValue>> pendingRequests;
 
   protected int idNode;
@@ -154,6 +156,7 @@ public class Node extends AbstractActor {
     this.bootNode = bootNode;
     this.reqCount = 0;
     this.joinCount = 0;
+    this.crashed = false;
     this.recovering = false;
     this.pendingRequests = new HashMap<>();
     this.nodes = new HashMap<>();
@@ -196,16 +199,29 @@ public class Node extends AbstractActor {
     String timestamp = new SimpleDateFormat("HH:mm:ss.SS").format(new java.util.Date());
     System.out.println(timestamp + ": [Node_" + idNode + "] " + log);
     if (!ignoreUI) {
-      KeyValStoreSystem.logsMap.get(this.idNode).add(log);
+      Platform.runLater(new Runnable() {
+        public void run() {
+          KeyValStoreSystem.logsMap.get(idNode).add(log);
+        }
+      });
     }
   }
+  
   private void log(String log) {
     log(log, false);
   }
 
   private void updateStoreUI() {
-    KeyValStoreSystem.storesMap.get(this.idNode).setValue(store.toString());
-    log("\n" + store.toString(), true);
+    Platform.runLater(new Runnable() {
+      public void run() {
+        if (crashed) {
+          KeyValStoreSystem.storesMap.get(idNode).setValue("CRASHED!");
+        } else {
+          KeyValStoreSystem.storesMap.get(idNode).setValue(store.toString());
+        }
+      }
+    });
+    if (!crashed) { log("\n" + store.toString(), true); }
   }
 
   void multicast(Serializable m) {
@@ -378,9 +394,9 @@ public class Node extends AbstractActor {
       if (!recovering) { 
         multicast(new NodeHello(this.idNode)); 
       } else {
+        crashed = false;
         recovering = false;
       }
-      
       pendingRequests.remove(joinCount++);
     }
     updateStoreUI();
@@ -397,7 +413,6 @@ public class Node extends AbstractActor {
         store.remove(key);
       }
     }
-    updateStoreUI();
   }
 
   void onNodeLeave (NodeLeave msg) {
@@ -445,7 +460,6 @@ public class Node extends AbstractActor {
   void onUpdateItem (UpdateItem msg) {
     log("UPDATE(" + msg.key + ", " + msg.value + ") from " + getSender().path().name());
     store.put(msg.key, msg.value); // Update value in the store
-    updateStoreUI();
   }  
 
   void onGet (Get msg) {
@@ -523,14 +537,14 @@ public class Node extends AbstractActor {
       StoreValue newValue = new StoreValue(updateReq.value, freshValue.getVersion() + 1); // Create new value
       if (updateReq.updateLocal) { store.put(updateReq.key, newValue); } // Update local value if required
       multicast(new UpdateItem(updateReq.key, newValue), updateReq.involvedNodes); // Send messages
-      updateStoreUI();
     }
   }
 
   void onCrash(Crash msg) {
+    crashed = true;
     getContext().become(crashed());
-    log("Crashed!");
-    KeyValStoreSystem.storesMap.get(this.idNode).setValue("CRASHED!");
+    log("Crashed!", false);
+    updateStoreUI();    
   }
 
   void onRecovery(Recovery msg) {
