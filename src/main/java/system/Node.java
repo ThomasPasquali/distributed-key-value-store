@@ -30,6 +30,7 @@ public class Node extends AbstractActor {
   private int reqCount, joinCount;
   private boolean crashed, recovering;
   private Map<Integer, PendingRequest.Request<StoreValue>> pendingRequests;
+  private Set<Integer> pendingUpdates;
 
   protected int idNode;
   protected ActorRef bootNode;
@@ -59,9 +60,10 @@ public class Node extends AbstractActor {
   public static enum STATUS { OK,  ERROR };
   public static class Feedback implements Serializable {
     public final String feedback;
-    public Feedback(int reqId, StoreValue value, STATUS status, ACT act) {
-      String str = "FEEDBACK: " + act + " #" + reqId + " [" + status + "]";
-      if (value != null) { str += " | " + value; }
+    public Feedback(Integer key, StoreValue value, STATUS status, ACT act) {
+      String str = "FEEDBACK: " + act + " #" + key;
+      if (value != null) { str += " -> " + value; }
+      str += " [" + status + "]";
       this.feedback = str;
     }
   }
@@ -125,9 +127,11 @@ public class Node extends AbstractActor {
 
   private static class GetItem implements Serializable {
     public final int reqId, key;
-    public GetItem(int reqId, int key) {
+    public final ACT act;
+    public GetItem(int reqId, int key, ACT act) {
       this.reqId = reqId;
       this.key = key;
+      this.act = act;
     }
   }
 
@@ -158,6 +162,7 @@ public class Node extends AbstractActor {
     this.joinCount = 0;
     this.crashed = false;
     this.recovering = false;
+    this.pendingUpdates  = new HashSet<>();
     this.pendingRequests = new HashMap<>();
     this.nodes = new HashMap<>();
     this.store = new HashMap<>() {
@@ -309,7 +314,7 @@ public class Node extends AbstractActor {
       // Check if the request is still pending after timeout
       if (req != null) { 
         log("Timeout for "+ req.act + " #" + reqId);
-        req.client.tell(new Feedback(reqId, null, STATUS.ERROR, req.act), self);
+        req.client.tell(new Feedback(req.key, null, STATUS.ERROR, req.act), self);
         pendingRequests.remove(reqId);
       }
     }, T);
@@ -447,9 +452,16 @@ public class Node extends AbstractActor {
   }
 
   void onGetItem (GetItem msg) {
-    log("GET(" + msg.key + ") from " + getSender().path().name());
-    StoreValue value = store.get(msg.key); // Try to get value from the store
+    String log = "GET(" + msg.key + ") from " + getSender().path().name();
+    if (msg.act == ACT.UPDATE && pendingUpdates.contains(msg.key)) {
+      log("[IGNORED] " + log);
+      return;
+    }
     
+    log(log);
+    StoreValue value = store.get(msg.key); // Try to get value from the store
+    if (msg.act == ACT.UPDATE) { pendingUpdates.add(msg.key); }
+
     // Send value to the sender
     ActorRef peer = getSender(), self = getSelf();
     Utils.setTimeout(() -> { // Add artificial delay
@@ -458,8 +470,12 @@ public class Node extends AbstractActor {
   }
 
   void onUpdateItem (UpdateItem msg) {
-    log("UPDATE(" + msg.key + ", " + msg.value + ") from " + getSender().path().name());
-    store.put(msg.key, msg.value); // Update value in the store
+    // Update value in the store only if it is fresher than the one stored
+    if (msg.value.compareTo(store.get(msg.key)) > 0) {
+      log("UPDATE(" + msg.key + ", " + msg.value + ") from " + getSender().path().name());
+      store.put(msg.key, msg.value);
+      pendingUpdates.remove(msg.key);
+    }
   }  
 
   void onGet (Get msg) {
@@ -468,7 +484,7 @@ public class Node extends AbstractActor {
     // Create a pending GET Request
     int reqId = reqCount++;
     Set<Integer> involvedNodes = getInvolvedNodes(msg.key, true);
-    PendingRequest.Request<StoreValue> req = new PendingRequest.Get<>(reqId, getSender(), new PendingRequest.Quorum<StoreValue>(R));
+    PendingRequest.Request<StoreValue> req = new PendingRequest.Get<>(reqId, getSender(), msg.key, new PendingRequest.Quorum<StoreValue>(R));
     
     // Check if the coordinator node should have the value
     if (involvedNodes.stream().anyMatch((nId) -> nId == idNode)) {
@@ -477,7 +493,7 @@ public class Node extends AbstractActor {
     }
 
     pendingRequests.put(reqId, req); // Put the request in the container
-    multicast(new GetItem(reqId, msg.key), involvedNodes); // Send a multicast to involved nodes
+    multicast(new GetItem(reqId, msg.key, ACT.GET), involvedNodes); // Send a multicast to involved nodes
     setQueryTimeout(getSelf(), reqId); 
   }
 
@@ -494,10 +510,11 @@ public class Node extends AbstractActor {
     if (req.updateLocal) {
       StoreValue value = store.get(msg.key);
       req.quorum.inc(value == null ? new StoreValue(null, -1) : value);  // Increment the quorum
+      pendingUpdates.add(msg.key);
     }
 
     pendingRequests.put(reqId, req); // Put the request in the container
-    multicast(new GetItem(reqId, msg.key), involvedNodes); // Send a multicast to involved nodes
+    multicast(new GetItem(reqId, msg.key, ACT.UPDATE), involvedNodes); // Send a multicast to involved nodes
     setQueryTimeout(getSelf(), reqId);
   }
 
@@ -528,14 +545,18 @@ public class Node extends AbstractActor {
     }
 
     // Give feedback to the client and remove pending request from the container
-    req.client.tell(new Feedback(msg.reqId, req.act == ACT.GET ? freshValue : null, STATUS.OK, req.act), getSelf());
+    req.client.tell(new Feedback(req.key, req.act == ACT.GET ? freshValue : null, STATUS.OK, req.act), getSelf());
     pendingRequests.remove(msg.reqId);
     
     // Send update to the involved nodes 
     if (req.act == ACT.UPDATE) {
       PendingRequest.Update<StoreValue> updateReq = (PendingRequest.Update<StoreValue>) req; // Cast the request to update type
       StoreValue newValue = new StoreValue(updateReq.value, freshValue.getVersion() + 1); // Create new value
-      if (updateReq.updateLocal) { store.put(updateReq.key, newValue); } // Update local value if required
+      // Update local value if required
+      if (updateReq.updateLocal) { 
+        store.put(updateReq.key, newValue); 
+        pendingUpdates.remove(updateReq.key);
+      } 
       multicast(new UpdateItem(updateReq.key, newValue), updateReq.involvedNodes); // Send messages
     }
   }

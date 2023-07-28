@@ -35,6 +35,9 @@ public class StoreValue implements Serializable, Comparable<StoreValue> {
 
   @Override 
   public int compareTo(StoreValue value) {
+    if (value == null) {
+      return 1;
+    }
     return this.version - value.version;
   }
 }

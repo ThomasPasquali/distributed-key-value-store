@@ -60,6 +60,10 @@ public class KeyValStoreSystem {
     return system.actorOf(Props.create(ClientActor.class, () -> new ClientActor(id, feedbacks)), "Client_" + id);
   }
 
+  public ActorRef getClient(int id) {
+    return clientControllers.get(id).getClient();
+  }
+
   public void addClient (int id, ClientController clientController) {
     clientControllers.put(id, clientController);
     for (Integer i : nodes.keySet()) {

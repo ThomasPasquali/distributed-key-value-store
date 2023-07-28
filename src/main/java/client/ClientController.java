@@ -102,6 +102,10 @@ public class ClientController {
     clientActor = system.createClientActor(id, feedbacks);
   }
 
+  public ActorRef getClient() {
+    return clientActor;
+  }
+
   public void addNode (int id) {
     coordinatorChoiceBox.getItems().add(id);
     if (coordinatorChoiceBox.getItems().size() == 1) {
