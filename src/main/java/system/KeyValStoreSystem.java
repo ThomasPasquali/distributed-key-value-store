@@ -39,10 +39,10 @@ public class KeyValStoreSystem {
   }
 
   public class ClientActor extends AbstractActor {
-    private final int id;
+    //private final int id;
     ObservableList<String> feedbacks;
     public ClientActor (int id, ObservableList<String> feedbacks) {
-      this.id = id;
+      //this.id = id;
       this.feedbacks = feedbacks;
     }
     void onFeedback (Node.Feedback feedback) {

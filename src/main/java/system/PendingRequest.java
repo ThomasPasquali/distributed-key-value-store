@@ -36,16 +36,16 @@ public class PendingRequest {
     Quorum<T> quorum;
     ACT act;
 
-    public Request (int reqId, ActorRef client, int key, Quorum<T> quorum) {
+    public Request (int reqId, ActorRef client, int key, int quorum) {
       this.reqId = reqId;
       this.client = client;
       this.key = key;
-      this.quorum = quorum;
+      this.quorum = new PendingRequest.Quorum<T>(quorum);
     }
   }
 
   public static class Get<T> extends Request<T> {    
-    public Get (int reqId, ActorRef client, int key, Quorum<T> quorum) {
+    public Get (int reqId, ActorRef client, int key, int quorum) {
       super(reqId, client, key, quorum);
       this.act = ACT.GET;
     }
@@ -56,7 +56,7 @@ public class PendingRequest {
     String value;
     Set<Integer> involvedNodes;
     
-    public Update (int reqId, ActorRef client, Quorum<T> quorum, int key, String value) {
+    public Update (int reqId, ActorRef client, int quorum, int key, String value) {
       super(reqId, client, key, quorum);
       this.act = ACT.UPDATE;
       this.value = value;
@@ -69,8 +69,9 @@ public class PendingRequest {
   }
 
   public static class Join<T> extends Request<T> {
-    public Join (int reqId, Quorum<T> quorum) {
-      super(reqId, null, -1, quorum);
+    private static int joinCounter = 0;
+    public Join (int quorum) {
+      super(joinCounter++, null, -1, quorum);
       this.act = ACT.JOIN;
     }
   }

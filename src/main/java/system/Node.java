@@ -27,10 +27,11 @@ public class Node extends AbstractActor {
   public static final int R = 2;
   public static final int W = 2;
   
-  private int reqCount, joinCount;
+  private int reqCount;
   private boolean crashed, recovering;
   private Map<Integer, PendingRequest.Request<StoreValue>> pendingRequests;
   private Set<Integer> pendingUpdates;
+  private PendingRequest.Join<StoreValue> pendingJoinOrRecovery;
 
   protected int idNode;
   protected ActorRef bootNode;
@@ -159,9 +160,9 @@ public class Node extends AbstractActor {
     this.idNode = id;
     this.bootNode = bootNode;
     this.reqCount = 0;
-    this.joinCount = 0;
     this.crashed = false;
     this.recovering = false;
+    this.pendingJoinOrRecovery = null;
     this.pendingUpdates  = new HashSet<>();
     this.pendingRequests = new HashMap<>();
     this.nodes = new HashMap<>();
@@ -316,6 +317,7 @@ public class Node extends AbstractActor {
         log("Timeout for "+ req.act + " #" + reqId);
         req.client.tell(new Feedback(req.key, null, STATUS.ERROR, req.act), self);
         pendingRequests.remove(reqId);
+        if (req.act == ACT.UPDATE) { pendingUpdates.remove(req.key); }
       }
     }, T);
   }
@@ -350,18 +352,15 @@ public class Node extends AbstractActor {
     } 
 
     // Create join/recovering pending request
-    int reqId = joinCount;
-    PendingRequest.Request<StoreValue> req = new PendingRequest.Join<>(reqId, new PendingRequest.Quorum<StoreValue>(Math.min(nodes.size(), R)));
-    pendingRequests.put(reqId, req);
+    pendingJoinOrRecovery = new PendingRequest.Join<>(Math.min(nodes.size(), R));
 
     multicast(new GetItems(idNode), getInvolvedNodes(idNode, false));   
     
     Utils.setTimeout(() -> {
-      PendingRequest.Request<StoreValue> joinReq = pendingRequests.get(reqId);
       // Check if the request is still pending after timeout
-      if (joinReq != null) { 
+      if (pendingJoinOrRecovery != null) { 
         multicast(new NodeHello(this.idNode));
-        pendingRequests.remove(joinCount++);
+        pendingJoinOrRecovery = null;
       }
     }, T);
   }
@@ -374,9 +373,8 @@ public class Node extends AbstractActor {
   void onGetItemsResponse (GetItemsResponse msg) {
     log("Received " + msg.items + " from " + getSender().path().name());
 
-    // Get join/recovering pending request
-    PendingRequest.Request<StoreValue> req = pendingRequests.get(joinCount); // Get pending request from id
-    if (req == null) { return; }
+    // Check if a join/recovering request is still pending
+    if (pendingJoinOrRecovery == null) { return; }
 
     // Update local store from received values
     if (store.size() == 0) { store.putAll(msg.items); }
@@ -391,10 +389,10 @@ public class Node extends AbstractActor {
       }
     }
 
-    req.quorum.inc(null); // Increment the quorum
+    pendingJoinOrRecovery.quorum.inc(null); // Increment the quorum
 
     // Exit if the quorum has not been reached yet
-    if (req.quorum.reached()) { 
+    if (pendingJoinOrRecovery.quorum.reached()) { 
       // If not recovering (join operation) broadcasts Hello msg from the new node
       if (!recovering) { 
         multicast(new NodeHello(this.idNode)); 
@@ -402,7 +400,7 @@ public class Node extends AbstractActor {
         crashed = false;
         recovering = false;
       }
-      pendingRequests.remove(joinCount++);
+      pendingJoinOrRecovery = null;
     }
     updateStoreUI();
   }
@@ -484,7 +482,7 @@ public class Node extends AbstractActor {
     // Create a pending GET Request
     int reqId = reqCount++;
     Set<Integer> involvedNodes = getInvolvedNodes(msg.key, true);
-    PendingRequest.Request<StoreValue> req = new PendingRequest.Get<>(reqId, getSender(), msg.key, new PendingRequest.Quorum<StoreValue>(R));
+    PendingRequest.Request<StoreValue> req = new PendingRequest.Get<>(reqId, getSender(), msg.key, R);
     
     // Check if the coordinator node should have the value
     if (involvedNodes.stream().anyMatch((nId) -> nId == idNode)) {
@@ -503,7 +501,7 @@ public class Node extends AbstractActor {
     // Create a pending UPDATE Request
     int reqId = reqCount++;
     Set<Integer> involvedNodes = getInvolvedNodes(msg.key, true);
-    PendingRequest.Update<StoreValue> req = new PendingRequest.Update<>(reqId, getSender(), new PendingRequest.Quorum<StoreValue>(W), msg.key, msg.value);
+    PendingRequest.Update<StoreValue> req = new PendingRequest.Update<>(reqId, getSender(), W, msg.key, msg.value);
     req.setInvolvedNodes(involvedNodes, this.idNode);
     
     // Check if the coordinator node should have the value
