@@ -1,7 +1,6 @@
 package main;
 
 import java.io.IOException;
-import java.util.Arrays;
 import java.util.TreeSet;
 
 import client.ClientController;

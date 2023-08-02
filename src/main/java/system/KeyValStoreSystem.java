@@ -25,7 +25,7 @@ public class KeyValStoreSystem {
   private final ActorSystem system;
   private final Set<Integer> crashed;
   private final Map<Integer, ActorRef> nodes;
-  private final Map<Integer,ClientController> clientControllers;
+  private final Map<Integer, ClientController> clientControllers;
 
   public KeyValStoreSystem () {
     system = ActorSystem.create("distr-key-val-system");
@@ -160,5 +160,9 @@ public class KeyValStoreSystem {
     
     nodes.get(nodeId).tell(new Node.Recovery(recoveryNode), null);
     crashed.remove(nodeId);
+  }
+
+  public void setDelay (int nodeId, int millis) {
+    delaysMap.get(nodeId).setValue(millis);
   }
 }

@@ -451,14 +451,13 @@ public class Node extends AbstractActor {
 
   void onGetItem (GetItem msg) {
     String log = "GET(" + msg.key + ") from " + getSender().path().name();
-    if (msg.act == ACT.UPDATE && pendingUpdates.contains(msg.key)) {
+    if (msg.act == ACT.UPDATE && !pendingUpdates.add(msg.key)) {
       log("[IGNORED] " + log);
       return;
     }
     
     log(log);
     StoreValue value = store.get(msg.key); // Try to get value from the store
-    if (msg.act == ACT.UPDATE) { pendingUpdates.add(msg.key); }
 
     // Send value to the sender
     ActorRef peer = getSender(), self = getSelf();
