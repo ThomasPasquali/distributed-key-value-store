@@ -7,11 +7,11 @@ public class CrashRecovery extends Test {
 
   @Override
   public void start(Stage stage) {
-    super.start(stage);
+    super.start(stage, "Crash - recovery simulation");
 
-    getSystem().update(clients.get(0), 10, 0, "ZERO_v0");
-    getSystem().update(clients.get(0), 20, 1, "ONE_v0");
-    getSystem().update(clients.get(0), 30, 2, "TWO_v0");
+    getSystem().update(clients.get(0), 1, 10, 0, "ZERO_v0");
+    getSystem().update(clients.get(0), 1, 20, 1, "ONE_v0");
+    getSystem().update(clients.get(0), 1, 30, 2, "TWO_v0");
   }
 
   @Override
@@ -26,7 +26,7 @@ public class CrashRecovery extends Test {
           break;
 
         case 2: // Update a key "owned" by node 20
-          getSystem().update(clients.get(0), 10, 0, "UPDATED_ZERO");
+          getSystem().update(clients.get(0), 1, 10, 0, "UPDATED_ZERO");
           break;
 
         case 3: // Node 20 recovers

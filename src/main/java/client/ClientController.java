@@ -25,6 +25,7 @@ public class ClientController {
   private KeyValStoreSystem system;
   private ObservableList<String> feedbacks;
   private ActorRef clientActor;
+  private int id;
 
   @FXML
   private TextField getKeyField;
@@ -57,8 +58,8 @@ public class ClientController {
     }
     
     if (err == null) {
-      feedbacks.add("Requesting get(" + key + ") to node " + coordinatorId);
-      system.get(clientActor, coordinatorId, key);
+      addFeedback("Requesting get(" + key + ") to node " + coordinatorId);
+      system.get(clientActor, id, coordinatorId, key);
     } else {
       showErrorDialog(err);
     }
@@ -80,8 +81,8 @@ public class ClientController {
     }
 
     if (err == null) {
-      feedbacks.add("Requesting update(" + key + ", " + updateValueField.getText() + ") to node " + coordinatorId);
-      system.update(clientActor, coordinatorId, key, updateValueField.getText());
+      addFeedback("Requesting update(" + key + ", " + updateValueField.getText() + ") to node " + coordinatorId);
+      system.update(clientActor, id, coordinatorId, key, updateValueField.getText());
     } else {
       showErrorDialog(err);
     }
@@ -89,6 +90,7 @@ public class ClientController {
 
   public ClientController (KeyValStoreSystem system, int id) {
     this.system = system;
+    this.id = id;
     feedbacks = FXCollections.observableArrayList();
     feedbacks.addListener((ListChangeListener.Change<? extends String> c) -> {
       while (c.next()) {
@@ -116,6 +118,10 @@ public class ClientController {
   public void removeNode (int id) {
     coordinatorChoiceBox.getItems().remove(coordinatorChoiceBox.getItems().indexOf(id));
     coordinatorChoiceBox.setValue(coordinatorChoiceBox.getItems().isEmpty() ? null : coordinatorChoiceBox.getItems().get(0));
+  }
+
+  public void addFeedback (String feedback) {
+    feedbacks.add(feedback);
   }
 
 }

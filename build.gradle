@@ -35,8 +35,8 @@ compileJava {
 }
 
 // mainClassName = "main.Main"
-mainClassName = "tests.CrashRecovery"
-// mainClassName = "tests.SeqConsistency"
+// mainClassName = "tests.CrashRecovery"
+mainClassName = "tests.SeqConsistency"
 
 sourceSets {
     main {

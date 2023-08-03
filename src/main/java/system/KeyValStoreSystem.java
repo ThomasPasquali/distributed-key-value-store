@@ -132,11 +132,21 @@ public class KeyValStoreSystem {
     removeClient(id);
   }
 
-  public void get (ActorRef clientActor, int coordinatorId, int key) {
+  public void get (ActorRef clientActor, int clientId, int coordinatorId, int key) {
+    if (clientControllers.get(clientId) != null) {
+      clientControllers.get(clientId).addFeedback("Requesting get(" + key + ") to node " + coordinatorId);
+    } else {
+      System.out.println("YHWREYHYUWYEWEYEEWYWEYWEEW " + clientId + " " + key);
+    }
     nodes.get(coordinatorId).tell(new Node.Get(key), clientActor);
   }
   
-  public void update (ActorRef clientActor, int coordinatorId, int key, String value) {
+  public void update (ActorRef clientActor, int clientId, int coordinatorId, int key, String value) {
+    if (clientControllers.get(clientId) != null) {
+      clientControllers.get(clientId).addFeedback("Requesting update(" + key + ", " + value + ") to node " + coordinatorId);
+    } else {
+      System.out.println("YHWREYHYUWYEWEYEEWYWEYWEEW " + clientId + " " + key);
+    }
     nodes.get(coordinatorId).tell(new Node.Update(key, value), clientActor);
   }
 

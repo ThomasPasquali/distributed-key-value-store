@@ -44,8 +44,7 @@ public abstract class Test extends Main {
     }
   }
 
-  @Override
-  public void start(Stage stage) {
+  public void start(Stage stage, String title) {
     super.start(stage);
     
     try {
@@ -68,7 +67,7 @@ public abstract class Test extends Main {
     ButtonType buttonTypeCancel = new ButtonType("Go!", ButtonData.CANCEL_CLOSE);
     alert.setX(mainStage.getX() + mainStage.getWidth() + 50);
     alert.setY(mainStage.getHeight() - 150);
-    alert.setTitle("Sequential consistency simulation");
+    alert.setTitle(title);
     alert.setHeaderText("Step " + (stepId + 1) + "/" + stepDescriptions.size() + ": " + stepDescriptions.get(stepId));
     alert.initModality(Modality.WINDOW_MODAL);
     alert.getButtonTypes().setAll(buttonTypeCancel);

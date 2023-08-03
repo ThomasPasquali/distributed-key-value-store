@@ -62,9 +62,9 @@ public class Node extends AbstractActor {
   public static class Feedback implements Serializable {
     public final String feedback;
     public Feedback(Integer key, StoreValue value, STATUS status, ACT act) {
-      String str = "FEEDBACK: " + act + " #" + key;
+      String str = "Feedback for " + act + "(" + key;
       if (value != null) { str += " -> " + value; }
-      str += " [" + status + "]";
+      str += ")   [" + status + "]";
       this.feedback = str;
     }
   }
