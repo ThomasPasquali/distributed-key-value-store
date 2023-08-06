@@ -10,8 +10,9 @@ public class CrashRecovery extends Test {
     super.start(stage, "Crash - recovery simulation");
 
     getSystem().update(clients.get(0), 1, 10, 0, "ZERO_v0");
-    getSystem().update(clients.get(0), 1, 20, 1, "ONE_v0");
-    getSystem().update(clients.get(0), 1, 30, 2, "TWO_v0");
+    getSystem().update(clients.get(0), 1, 20, 11, "ONE_v0");
+    getSystem().update(clients.get(0), 1, 30, 22, "TWO_v0");
+    getSystem().update(clients.get(0), 1, 40, 33, "THREE_v0");
   }
 
   @Override

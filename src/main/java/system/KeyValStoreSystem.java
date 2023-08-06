@@ -136,7 +136,7 @@ public class KeyValStoreSystem {
     if (clientControllers.get(clientId) != null) {
       clientControllers.get(clientId).addFeedback("Requesting get(" + key + ") to node " + coordinatorId);
     } else {
-      System.out.println("YHWREYHYUWYEWEYEEWYWEYWEEW " + clientId + " " + key);
+      System.out.println("ERROR " + clientId + " " + key);
     }
     nodes.get(coordinatorId).tell(new Node.Get(key), clientActor);
   }
@@ -145,7 +145,7 @@ public class KeyValStoreSystem {
     if (clientControllers.get(clientId) != null) {
       clientControllers.get(clientId).addFeedback("Requesting update(" + key + ", " + value + ") to node " + coordinatorId);
     } else {
-      System.out.println("YHWREYHYUWYEWEYEEWYWEYWEEW " + clientId + " " + key);
+      System.out.println("ERROR " + clientId + " " + key);
     }
     nodes.get(coordinatorId).tell(new Node.Update(key, value), clientActor);
   }

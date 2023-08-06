@@ -22,21 +22,21 @@ import system.PendingRequest.ACT;
 
 public class Node extends AbstractActor {
 
-  public static final int T = 2000;
-  public static final int N = 3;
-  public static final int R = 2;
-  public static final int W = 2;
+  public static final int T = 2000; // Timeout
+  public static final int N = 3;    // Number of replicas
+  public static final int R = 2;    // Read quorum
+  public static final int W = 2;    // Write quorum
   
-  private int reqCount;
-  private boolean crashed, recovering;
-  private Map<Integer, PendingRequest.Request<StoreValue>> pendingRequests;
-  private Set<Integer> pendingUpdates;
-  private PendingRequest.Join<StoreValue> pendingJoinOrRecovery;
+  private int reqCount;                                                       // Request counter for each node (not global)
+  private boolean crashed, recovering;                                        // Status flags
+  private Map<Integer, PendingRequest.Request<StoreValue>> pendingRequests;   // Pending requests which are coordinated by the node
+  private Set<Integer> pendingUpdates;                                        // Pending updates in the whole system
+  private PendingRequest.Join<StoreValue> pendingJoinOrRecovery;              // Pending join/recovery request
 
-  protected int idNode;
-  protected ActorRef bootNode;
-  protected Map<Integer, ActorRef> nodes;
-  protected Map<Integer, StoreValue> store; 
+  protected int idNode;                       // Node ID
+  protected ActorRef bootNode;                // Node to contact for the list of nodes in the system
+  protected Map<Integer, ActorRef> nodes;     // List of nodes in the system
+  protected Map<Integer, StoreValue> store;   // Store of the items
 
   /* -------------------------------------- PUBLIC MESSAGE INTERFACE (CLIENT-NODE) ---------------------------------------- */
   
@@ -254,7 +254,7 @@ public class Node extends AbstractActor {
    * @param key Key of the involved item
    * @return A set of ids representing the nodes responsible of the item
    */
-  private Set<Integer> getInvolvedNodes (int key, boolean self) { // TODO test me
+  private Set<Integer> getInvolvedNodes (int key, boolean self) {
     List<Integer> ids = new ArrayList<>(nodes.keySet());
     if (self) { ids.add(idNode); }
     Collections.sort(ids);
@@ -451,19 +451,27 @@ public class Node extends AbstractActor {
 
   void onGetItem (GetItem msg) {
     String log = "GET(" + msg.key + ") from " + getSender().path().name();
-    if (msg.act == ACT.UPDATE && !pendingUpdates.add(msg.key)) {
-      log("[IGNORED] " + log);
+    
+    // If the item is in the update process don't send the answer
+    if (pendingUpdates.contains(msg.key)) {
+      log("[IGNORED] " + log + "; can break seq consistency");
       return;
     }
+
+    // If the item requested have to be updated add in the set of pending updates
+    if (msg.act == ACT.UPDATE) { pendingUpdates.add(msg.key); }
     
     log(log);
     StoreValue value = store.get(msg.key); // Try to get value from the store
 
-    // Send value to the sender
+    // Send value to the sender (add artificial delay only for test purposes)
     ActorRef peer = getSender(), self = getSelf();
-    Utils.setTimeout(() -> { // Add artificial delay
+    Utils.setTimeout(() -> { 
       peer.tell(new GetItemResponse(msg.reqId, value == null ? new StoreValue(null, -1) : value), self);
     }, KeyValStoreSystem.delaysMap.get(idNode).get());
+
+    // Set a timeout to remove the item from pending updates (to avoid deadlock in case of failures)
+    Utils.setTimeout(() -> { pendingUpdates.remove(msg.key); }, T);
   }
 
   void onUpdateItem (UpdateItem msg) {
@@ -471,6 +479,7 @@ public class Node extends AbstractActor {
     if (msg.value.compareTo(store.get(msg.key)) > 0) {
       log("UPDATE(" + msg.key + ", " + msg.value + ") from " + getSender().path().name());
       store.put(msg.key, msg.value);
+      // Remove item from pending updates set
       pendingUpdates.remove(msg.key);
     }
   }  
