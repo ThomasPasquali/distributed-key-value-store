@@ -94,7 +94,7 @@ public class ClientController {
     feedbacks = FXCollections.observableArrayList();
     feedbacks.addListener((ListChangeListener.Change<? extends String> c) -> {
       while (c.next()) {
-        Platform.runLater(() -> { // TODO fix java.util.ConcurrentModificationException
+        Platform.runLater(() -> {
           if (c.wasAdded()) {
             c.getAddedSubList().stream().forEachOrdered(s -> textFlow.getChildren().add(new Text(s + "\n")));
           }

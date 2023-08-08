@@ -76,7 +76,7 @@ public class Main extends Application {
     TextArea logsTa = new TextArea();
     logsTa.setEditable(false);
     logsTa.textProperty().bind(nodeLogsString);
-    logsTa.textProperty().addListener((v, o, n) -> { // FIXME scroll to bottom
+    logsTa.textProperty().addListener((v, o, n) -> { // missing scroll to bottom
       // logsTa.selectPositionCaret(logsTa.getLength());
       // logsTa.setScrollTop(Double.MAX_VALUE);
       // logsTa.appendText("");
@@ -84,7 +84,7 @@ public class Main extends Application {
 
     TextArea storeTa = new TextArea();
     storeTa.setEditable(false);
-    storeTa.textProperty().bind(nodeStoreString); // FIXME scroll to bottom
+    storeTa.textProperty().bind(nodeStoreString); // missing scroll to bottom
 
     HBox headHbox = new HBox(50, new Label("Node: " + nodeId));
     headHbox.setAlignment(Pos.CENTER);
@@ -92,10 +92,24 @@ public class Main extends Application {
     bodyHbox.setAlignment(Pos.CENTER);
     VBox vbox = new VBox(5, headHbox, bodyHbox);
     vbox.setAlignment(Pos.CENTER);
-    Button b = new Button("Node " + nodeId + " leaves");
-    b.setOnAction((ActionEvent e) -> {
+    Button btnLeaves = new Button("Node " + nodeId + " leaves");
+    btnLeaves.setOnAction((ActionEvent e) -> {
       system.nodeLeaves(nodeId);
       nodesPane.getChildren().remove(vbox);
+    });
+    Button btnCrashRecover = new Button("Node " + nodeId + " crashes");
+    btnCrashRecover.setOnAction((ActionEvent e) -> {
+      if (btnCrashRecover.getText().endsWith("crashes")) {
+        system.crashNode(nodeId);
+        btnCrashRecover.setText("Node " + nodeId + " recovers");
+      } else {
+        try {
+          system.recoverNode(nodeId, -1);
+        } catch (Exception e1) {
+          e1.printStackTrace();
+        }
+        btnCrashRecover.setText("Node " + nodeId + " crashes");
+      }
     });
     TextField delayField = new TextField("0");
     delayField.setOnKeyTyped((e) -> {
@@ -106,7 +120,7 @@ public class Main extends Application {
     HBox delayHBox = new HBox(5, new Label("Response delay (ms): "), delayField);
     delayHBox.setAlignment(Pos.CENTER);
 
-    headHbox.getChildren().addAll(b, delayHBox);
+    headHbox.getChildren().addAll(btnLeaves, btnCrashRecover, delayHBox);
     int newNodeI = -1;
     for (Integer id : new TreeSet<>(getSystem().getCurrentNodeIds())) {
       if (id > nodeId) break;
