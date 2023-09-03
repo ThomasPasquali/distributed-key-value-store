@@ -8,6 +8,10 @@ import system.Utils;
 
 public class SeqConsistency extends Test {
 
+  public SeqConsistency () {
+    super(4000);
+  }
+
   @Override
   public void start(Stage stage) {
     super.start(stage, "Sequential consistency simulation");
@@ -22,6 +26,10 @@ public class SeqConsistency extends Test {
             getSystem().get(clients.get(1), 2, 40, 1);
             getSystem().get(clients.get(1), 2, 50, 1);
         }, 15));
+        Platform.runLater(() -> Utils.setTimeout(() -> {
+            getSystem().get(clients.get(1), 2, 40, 1);
+            getSystem().get(clients.get(1), 2, 50, 1);
+        }, 500));
         break;
       
       case 1: // Concurrent update+get same key - different coordinators  TEST 2
@@ -65,11 +73,11 @@ public class SeqConsistency extends Test {
     String[] params = {"5",  // Number of nodes 
                        "2",  // Number of clients
                        // Steps labels
-                       "Concurrent write and read: client 1 writes, client 2 reads from different coordinators, after 15ms", 
+                       "Concurrent write and read: client 1 writes, client 2 reads from different coordinators, after 15ms and 500ms", 
                        "Concurrent write and read: client 1 writes, 2 gets to different coordinators, after 3s, same two gets",
                        "Concurrent writes v1: client 1 then 2",
-                       "Concurrent writes v2: client 1 delay 13ms, 2 delay 10",
-                       "Concurrent writes v3: client 1 delay 14ms, 2 delay 10", 
+                       "Concurrent writes v2: client 1 delay 13ms, 2 delay 10ms",
+                       "Concurrent writes v3: client 1 delay 14ms, 2 delay 10ms", 
                        "Done!"};
     Application.launch(params);
   }

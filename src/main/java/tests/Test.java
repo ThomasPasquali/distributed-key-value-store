@@ -6,6 +6,7 @@ import java.util.List;
 import java.util.Set;
 
 import akka.actor.ActorRef;
+import client.ClientController;
 import javafx.application.Platform;
 import javafx.scene.control.Alert;
 import javafx.scene.control.Alert.AlertType;
@@ -15,8 +16,11 @@ import javafx.scene.control.DialogEvent;
 import javafx.stage.Modality;
 import javafx.stage.Stage;
 import main.Main;
+import system.Utils;
 
 public abstract class Test extends Main {
+
+  protected static final String TEST_SEP = "------------------------------------------------------------------";
 
   protected int nNodes, nClients;
   protected Set<Integer> nodeIds;
@@ -25,6 +29,12 @@ public abstract class Test extends Main {
   protected int stepId = 0;
   protected List<String> stepDescriptions;
   protected Alert alert;
+
+  protected int delay;
+
+  public Test (int delay) {
+    this.delay = delay;
+  }
 
   @Override
   public void init() {
@@ -77,6 +87,11 @@ public abstract class Test extends Main {
       stepId++;
       if (stepId < stepDescriptions.size()) {
         alert.setHeaderText("Step " + (stepId + 1) + "/" + stepDescriptions.size() + ": " + stepDescriptions.get(stepId));
+        Platform.runLater(() -> Utils.setTimeout(() -> {
+          for (ClientController c : getSystem().getClientControllers()) {
+            c.addFeedback(TEST_SEP);
+          }
+        }, delay));
       } else {
         Platform.exit();
         System.exit(0);

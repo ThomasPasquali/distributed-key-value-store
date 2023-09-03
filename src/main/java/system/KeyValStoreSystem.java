@@ -1,6 +1,7 @@
 package system;
 
 import java.util.ArrayList;
+import java.util.Collection;
 import java.util.HashMap;
 import java.util.HashSet;
 import java.util.List;
@@ -62,6 +63,10 @@ public class KeyValStoreSystem {
 
   public ActorRef getClient(int id) {
     return clientControllers.get(id).getClient();
+  }
+
+  public Collection<ClientController> getClientControllers() {
+    return clientControllers.values();
   }
 
   public void addClient (int id, ClientController clientController) {

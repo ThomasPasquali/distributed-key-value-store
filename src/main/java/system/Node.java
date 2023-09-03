@@ -344,9 +344,10 @@ public class Node extends AbstractActor {
     // If recovering remove items no longer responsible for
     if (recovering) {
       nodes.remove(idNode);
-      for (Integer key : store.keySet()) {
-        if (!getInvolvedNodes(key,  true).contains(idNode)) {
-          store.remove(key);
+      List<Integer> keys = new ArrayList<>(store.keySet());
+      for (int i = 0; i < keys.size(); ++i) {
+        if (!getInvolvedNodes(keys.get(i), true).contains(idNode)) {
+          store.remove(keys.get(i));
         }
       }
     } 
